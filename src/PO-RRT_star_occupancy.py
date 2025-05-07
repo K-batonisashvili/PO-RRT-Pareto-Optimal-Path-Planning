@@ -37,6 +37,7 @@ class Tree:
         self.rewire_counts = 0
         self.rewire_neighbors_count = 0
         self.grid = grid
+        self.node_count = 0 # Debugger
 
     def add_node(self, node, multiple_children=False):
         """
@@ -61,6 +62,7 @@ class Tree:
             new_path.add_node(node)
             self.paths.append(new_path)
         node.added_to_tree = True
+        self.node_count += 1
 
     def nearest(self, rand_node):
         """
@@ -134,6 +136,7 @@ class Tree:
         subtree of .children under `root`, avoiding recursion.
         """
         queue = [root]
+        new_path = root.path #
         while queue:
             node = queue.pop(0)
             for child in node.children.copy():    
@@ -154,7 +157,10 @@ class Tree:
                 child.log_survival = node.log_survival + log_s_step
                 child.p_fail       = 1 - np.exp(child.log_survival)
 
-                # 4) guard against stray cycles: only follow actual parent→child links
+                # 4) Update the path reference for the child
+                child.path = new_path #
+
+                # 5) guard against stray cycles: only follow actual parent→child links
                 if child.parent is node:
                     queue.append(child)
 
@@ -410,7 +416,8 @@ def rrt_star(start, goal, grid, failure_prob_values, max_iter=5000, step_size=DE
                     # multiple possible parents, 
                     for nn in new_nodes:
                         multiple_children = True if len(nn.parent.children) > 2 else False
-                        # 1) goal check per branch
+                        if multiple_children:
+                            print(f"Multiple children: {len(nn.parent.children)}")                        # 1) goal check per branch
                         if distance_to(nn, goal) < step_size:
                             # connect to goal exactly once per branch
                             goal_node.parent        = nn
@@ -431,7 +438,9 @@ def rrt_star(start, goal, grid, failure_prob_values, max_iter=5000, step_size=DE
                 else:
                     # single child branch
                     nn = new_nodes[0]
-                    multiple_children = any(c.path is not nn.parent.path for c in nn.parent.children)
+                    multiple_children = True if len(nn.parent.children) > 2 else False
+                    if multiple_children:
+                        print(f"Multiple children: {len(nn.parent.children)}")
                     if distance_to(nn, goal) < step_size:
                         # ─── goal handling ─────────────────────────
                         goal_node.parent        = nn
