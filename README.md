@@ -1,5 +1,5 @@
 # PO-RRT*: Pareto Optimal RRT* Path Planning Algorithm
-Main repo for novel RRT* Algorithm which focuses on Pareto-optimized safety definitions Our main code can be found under the `src` folder. Several tests were created for benchmarking and validation under the `tests` folder. You may directly download the python file `PO-RRT_star.py` and run it locally on your machine, or for an in-depth tutorial, please look through the `setup_guide.md` notebook on setting up a virtual conda environment, cloning this github repo, running the tests, and finally the main code. 
+Main repo for novel RRT* Algorithm which focuses on Pareto-optimized safety definitions Our main code can be found under the `src` folder. Several tests were created for benchmarking and validation under the `tests` folder. You may directly download the python file `PO-RRT_Star.py` and run it locally on your machine, or for an in-depth tutorial, please look through the `setup_guide.md` notebook on overall general instructions, setting up a virtual conda environment, cloning this github repo, running the tests, and finally the main code. 
 
 
 
@@ -25,12 +25,3 @@ We say that a potential path Pareto dominates another if and only if the followi
 ![Pareto-Dominance-EQs](./imgs/Pareto-Dominance-Eqs.PNG)
 
 Following the logic of 1, we are presented with paths that are either lower in cost but have the same probability of failure, paths that are lower in probability of failure but the same cost, or lower in both. While a Pareto-optimal path dominates certain others, it will never dominate another Pareto-optimal path as the objective conditions are dependent on overall goals. To visualize this, we can look back at 1 where there are certain paths that are may dominate others in cost, but not in their probability of failure. This criterion would allow for the generation of multiple dominant paths that may be transferred to the human counterpart for further analysis based on aforementioned goals.
-
-
-
-[![codecov](https://codecov.io/gh/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/graph/badge.svg?token=JSEBHATNLH)](https://codecov.io/gh/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning)
-
-[![Run Tests](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml/badge.svg)](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml)
-
-[![python](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/)
-![os](https://img.shields.io/badge/os-ubuntu%20|%20macos%20|%20windows-blue.svg)

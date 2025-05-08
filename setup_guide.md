@@ -1,5 +1,13 @@
 # Main Setup Guide for Framework
-This setup_guide will function as a walkthrough on how to install this framework on your machine using a virtual conda environment. The beginning of this tutorial will go through the basics on downloading the files and creating the environment. Once this first step is complete, this guide will dive into how to use the code properly. 
+This setup_guide will function as a walkthrough on how to install this framework on your machine using a virtual conda environment. The beginning of this tutorial will go through the basics on downloading the files and creating the environment. Once this first step is complete, this guide will dive into how to use the code properly. Below you will find badges for code coverage for different OS systems,
+
+[![codecov](https://codecov.io/gh/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/graph/badge.svg?token=JSEBHATNLH)](https://codecov.io/gh/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning)
+
+[![Run Tests](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml/badge.svg)](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml)
+
+[![python](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/)
+
+[![os](https://img.shields.io/badge/os-ubuntu%20|%20macos%20|%20windows-blue.svg)]
 
 - `README.md`: Introduction to the Github repo, research, and algorithm.
 - `setup_guide.md`: Main tutorial on how to install the repo (specifically through conda) and troubleshooting.
@@ -11,6 +19,7 @@ This setup_guide will function as a walkthrough on how to install this framework
 
 ## Getting Started
 When cloning this repo, you will have a general `src` (source) folder with all the primary files within it. The `tests` folder contains over 40 Pytest functions that are used in troubleshooting and verification of the code. `README.md`, `setup_guide.md`, and `pyproject.toml` will be in the base directory next to the `src` folder. The rest of the setup for this should be fairly straightforward.
+
 
 We are going to create a new conda environment for this code for ease of use and to better keep track of all dependencies. Explicitly setting up a virtual environment ensures that future library installations will not be affected by our code today.
 
