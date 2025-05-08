@@ -1,13 +1,13 @@
 import pytest
-from PO_RRT_star_occupancy import Tree, Grid, GRID_WIDTH, GRID_HEIGHT
+from PO_RRT_Star import Tree, Grid, GRID_WIDTH, GRID_HEIGHT
 
-# Create a dummy Grid for Tree initialization using a fixture
+# Create a dummy Grid for Tree initialization
 @pytest.fixture
 def dummy_grid_instance():
     """Provides a basic empty Grid instance for tests."""
     return Grid(GRID_WIDTH, GRID_HEIGHT, [])
 
-# Create a Tree instance using a fixture
+# Create a Tree instance
 @pytest.fixture
 def tree_instance(dummy_grid_instance):
     """Provides a Tree instance for testing Pareto dominance."""

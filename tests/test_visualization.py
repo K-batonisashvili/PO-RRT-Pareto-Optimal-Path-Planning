@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from unittest.mock import patch, MagicMock
 from visualization import init_progress_plot_3d, update_progress_plot_3d, plot_paths_metrics
-from PO_RRT_star_occupancy import Node, GRID_WIDTH, GRID_HEIGHT, X_MIN, X_MAX, Y_MIN, Y_MAX
+from PO_RRT_Star import Node, GRID_WIDTH, GRID_HEIGHT, X_MIN, X_MAX, Y_MIN, Y_MAX
 
 # Mock the matplotlib.pyplot module as visualization functions interact with it
 @pytest.fixture(autouse=True)

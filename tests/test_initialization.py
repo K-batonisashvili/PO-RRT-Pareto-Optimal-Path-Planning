@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from PO_RRT_star_occupancy import Node, Path, Tree, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, X_MAX, Y_MAX, GRID_RESOLUTION
+from PO_RRT_Star import Node, Path, Tree, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, X_MAX, Y_MAX, GRID_RESOLUTION
 
 # Define a fixture for a dummy grid, reusable across tests
 @pytest.fixture

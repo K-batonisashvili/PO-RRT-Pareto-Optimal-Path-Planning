@@ -1,7 +1,7 @@
 # import pytest
 # import numpy as np
 # from unittest.mock import patch, MagicMock
-# from PO_RRT_star_occupancy import rrt_star, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, X_MAX, Y_MIN, Y_MAX, DEFAULT_STEP_SIZE
+# from PO_RRT_Star import rrt_star, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, X_MAX, Y_MIN, Y_MAX, DEFAULT_STEP_SIZE
 
 # # Create a dummy Grid for the RRT* function using a fixture
 # @pytest.fixture

@@ -1,7 +1,9 @@
 import pytest
 import numpy as np
-from PO_RRT_star_occupancy import Node, Path, Tree, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, GRID_RESOLUTION, PARETO_RADIUS
+from PO_RRT_Star import Node, Path, Tree, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, GRID_RESOLUTION, PARETO_RADIUS
 from helper_functions import distance_to
+# Need to import the main module to temporarily change PARETO_RADIUS for some tests
+import PO_RRT_star
 
 # Create a dummy Grid for Tree initialization and cost calculation using a fixture
 @pytest.fixture
@@ -115,7 +117,7 @@ def test_rewire_dominating_path(tree_for_rewiring, new_node_candidate, dummy_gri
     # Potential new path to node2: root -> new_node -> node2
     # Distance from new_node (1.5, 0.5, 0) to node2 (2.0, 0, 0) is sqrt(0.5^2 + 0.5^2) = sqrt(0.5) approx 0.707
     # Cost via new_node = new_node.cost + distance(new_node, node2)
-    # Let's make the cost via new_node artificially lower for testing dominance
+    # Let's manually make the cost via new_node lower for dominance testing
     new_node.cost = 0.5 # Artificially low cost to new_node
     cost_via_new_node = new_node.cost + distance_to(new_node, node2) # 0.5 + 0.707 = 1.207
     p_fail_via_new_node = new_node.p_fail # 0.0
@@ -136,7 +138,7 @@ def test_rewire_dominating_path(tree_for_rewiring, new_node_candidate, dummy_gri
 
     # Temporarily increase PARETO_RADIUS to include node2 as a neighbor of new_node
     original_pareto_radius = PARETO_RADIUS
-    PO_RRT_star_occupancy.PARETO_RADIUS = 1.0 # Assuming 1.0 is enough to include node2
+    PO_RRT_star.PARETO_RADIUS = 1.0 # Assuming 1.0 is enough to include node2
 
     # Find neighbors of new_node with the temporarily increased radius
     znear = tree.neighbors(new_node)
@@ -163,7 +165,7 @@ def test_rewire_dominating_path(tree_for_rewiring, new_node_candidate, dummy_gri
     assert tree.rewire_counts == original_rewire_count + 1
 
     # Restore original PARETO_RADIUS
-    PO_RRT_star_occupancy.PARETO_RADIUS = original_pareto_radius
+    PO_RRT_star.PARETO_RADIUS = original_pareto_radius
 
 
 def test_rewire_no_dominance(tree_for_rewiring, new_node_candidate, dummy_grid_instance_empty):
@@ -177,7 +179,7 @@ def test_rewire_no_dominance(tree_for_rewiring, new_node_candidate, dummy_grid_i
     # We want new_node -> node2 to NOT be better than node1 -> node2
     # Current path to node2: root -> node1 -> node2 (cost = 2.0, p_fail = 0.0)
     # Potential new path to node2: root -> new_node -> node2
-    # Let's make the cost via new_node artificially higher
+    # We again manually make the cost via new_node higher
     new_node.cost = 3.0 # Artificially high cost to new_node
     cost_via_new_node = new_node.cost + distance_to(new_node, node2) # 3.0 + 0.707 = 3.707
     p_fail_via_new_node = new_node.p_fail # 0.0
@@ -196,7 +198,7 @@ def test_rewire_no_dominance(tree_for_rewiring, new_node_candidate, dummy_grid_i
 
     # Temporarily increase PARETO_RADIUS to include node2
     original_pareto_radius = PARETO_RADIUS
-    PO_RRT_star_occupancy.PARETO_RADIUS = 1.0
+    PO_RRT_star.PARETO_RADIUS = 1.0
     znear = tree.neighbors(new_node)
     assert node2 in znear
 
@@ -221,7 +223,7 @@ def test_rewire_no_dominance(tree_for_rewiring, new_node_candidate, dummy_grid_i
     assert tree.rewire_counts == original_rewire_count # No rewiring should happen
 
     # Restore original PARETO_RADIUS
-    PO_RRT_star_occupancy.PARETO_RADIUS = original_pareto_radius
+    PO_RRT_star.PARETO_RADIUS = original_pareto_radius
 
 
 def test_rewire_with_grid_risk_propagation(tree_for_rewiring, new_node_candidate):
@@ -262,7 +264,7 @@ def test_rewire_with_grid_risk_propagation(tree_for_rewiring, new_node_candidate
 
     # Temporarily increase PARETO_RADIUS
     original_pareto_radius = PARETO_RADIUS
-    PO_RRT_star_occupancy.PARETO_RADIUS = 1.0
+    PO_RRT_star.PARETO_RADIUS = 1.0
     znear = tree.neighbors(new_node)
     assert node2 in znear
 
@@ -285,8 +287,6 @@ def test_rewire_with_grid_risk_propagation(tree_for_rewiring, new_node_candidate
     assert child1.path == node2.path
 
     # Restore original PARETO_RADIUS
-    PO_RRT_star_occupancy.PARETO_RADIUS = original_pareto_radius
+    PO_RRT_star.PARETO_RADIUS = original_pareto_radius
 
-# Need to import the main module to temporarily change PARETO_RADIUS for some tests
-import PO_RRT_star_occupancy
 

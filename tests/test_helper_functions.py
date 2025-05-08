@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from helper_functions import distance_to, get_coord, is_collision_free, steer
-from PO_RRT_star_occupancy import Node, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, X_MAX, Y_MAX, GRID_RESOLUTION, DEFAULT_STEP_SIZE
+from PO_RRT_Star import Node, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, X_MAX, Y_MAX, GRID_RESOLUTION, DEFAULT_STEP_SIZE
 
 # Create a dummy Grid for collision checks using a fixture
 @pytest.fixture

@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from PO_RRT_star_occupancy import Node, Path, Tree, Grid, GRID_WIDTH, GRID_HEIGHT
+from PO_RRT_Star import Node, Path, Tree, Grid, GRID_WIDTH, GRID_HEIGHT
 from helper_functions import distance_to
 
 # Create a dummy Grid for Tree initialization using a fixture

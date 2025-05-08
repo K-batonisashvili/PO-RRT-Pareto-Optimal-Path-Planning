@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from PO_RRT_star_occupancy import Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, GRID_RESOLUTION
+from PO_RRT_Star import Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, GRID_RESOLUTION
 
 # Define a fixture for a grid with specific obstacles
 @pytest.fixture
@@ -17,7 +17,6 @@ def test_add_circular_obstacle(grid_with_obstacles):
     grid = grid_with_obstacles
 
     # Check a point inside the obstacle (should have high probability)
-    # Convert world coordinates to grid indices
     ox, oy = 1.0, 1.0
     center_x_idx = int((ox - X_MIN) / GRID_RESOLUTION)
     center_y_idx = int((oy - Y_MIN) / GRID_RESOLUTION)
@@ -74,7 +73,7 @@ def test_multiple_obstacles_interaction():
     test_x, test_y = 1.1, 1.1 # Within rectangular area, outside circle radius+safe_dist
     test_x_idx = int((test_x - X_MIN) / GRID_RESOLUTION)
     test_y_idx = int((test_y - Y_MIN) / GRID_RESOLUTION)
-    # This point is within the rectangular area, should have its probability
+    # This point is within the rectangular area + circle. Should have higher probability than rectangle, but less than circle
     assert grid.grid[test_x_idx][test_y_idx] >= 0.5
 
     # Check a point in free space

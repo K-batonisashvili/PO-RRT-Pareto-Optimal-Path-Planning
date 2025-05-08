@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from PO_RRT_star_occupancy import Node, Tree, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, GRID_RESOLUTION, PARETO_RADIUS
+from PO_RRT_Star import Node, Tree, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, GRID_RESOLUTION, PARETO_RADIUS
 from helper_functions import distance_to
 
 # Create a dummy Grid for Tree initialization and cost calculation using a fixture
@@ -155,7 +155,7 @@ def test_choose_parents_dominated_candidates_filtered(tree_with_root, potential_
     )
 
     assert len(new_nodes) == 1  # Only the non-dominated one should be returned
-    assert new_nodes[0].parent == znear[0]  # Parent1 should be the parent
+    assert new_nodes[0].parent == znear[0]  # Parent1 should be parent
     assert np.isclose(new_nodes[0].cost, znear[0].cost + cost_p1_to_new)
     assert np.isclose(new_nodes[0].log_survival, znear[0].log_survival)
 

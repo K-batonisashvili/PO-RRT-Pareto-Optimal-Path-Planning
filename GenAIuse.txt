@@ -1,0 +1,6 @@
+Generative AI was used throughout several stages of this research.
+To preserve authenticity and originality of work, certain restrictions were placed 
+on how LLM's contributed to this research. AI help was limited to the following:
+1) Reformatting of variable names and structure.
+2) Identification of different libraries for optimization.
+3) Generating code outline for visualizing how methods and functions are called. 
