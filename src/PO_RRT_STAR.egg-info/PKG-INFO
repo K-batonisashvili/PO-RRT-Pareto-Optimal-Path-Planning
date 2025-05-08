@@ -1,3 +1,21 @@
+Metadata-Version: 2.4
+Name: PO_RRT_STAR
+Version: 0.0.0
+Summary: Pareto-Optimal RRT* Framework
+Author-email: Kote Batonisashvili <kbat6359@bu.edu>
+Project-URL: homepage, https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: matplotlib
+Requires-Dist: numpy
+Requires-Dist: pytest
+Requires-Dist: pytest-cov
+Requires-Dist: scipy
+Dynamic: license-file
+
 # PO-RRT*: Pareto Optimal RRT* Path Planning Algorithm
 Main repo for novel RRT* Algorithm which focuses on Pareto-optimized safety definitions Our main code can be found under the `src` folder. Several tests were created for benchmarking and validation under the `tests` folder. You may directly download the python file `PO-RRT_star_occupancy.py` and run it locally on your machine, or for an in-depth tutorial, please look through the `setup_guide.ipynb` jupyter notebook on setting up a virtual conda environment, cloning this github repo, running the tests, and finally the main code. 
 

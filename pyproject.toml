@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PO_RRT_STAR"
+version = "0.0.0"
+authors = [
+    { name = "Kote Batonisashvili", email = "kbat6359@bu.edu" },
+]
+description = "Pareto-Optimal RRT* Framework"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "pytest",
+    "pytest-cov",
+    "scipy"
+]
+
+[project.urls]
+homepage = "https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning"
