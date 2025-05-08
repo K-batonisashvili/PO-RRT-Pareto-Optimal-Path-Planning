@@ -49,49 +49,34 @@ def test_choose_parents_single_pareto_optimal(tree_with_root, potential_parents,
     new_node_x, new_node_y, new_node_theta = 1.0, 1.0, 0
 
     # Assume parent1 offers a better path to (1,1,0) than parent2
-    # Artificially set costs/p_fail to ensure this dominance for the path to (1,1,0)
+    # Artificially set costs/log_survival to ensure this dominance for the path to (1,1,0)
     # Path from root -> parent1 -> (1,1,0)
     cost_p1_to_new = distance_to(znear[0], Node(new_node_x, new_node_y, new_node_theta))
     total_cost_p1 = znear[0].cost + cost_p1_to_new
-    total_p_fail_p1 = znear[0].p_fail # 0.0
+    total_log_survival_p1 = znear[0].log_survival  # No additional risk for parent1
 
     # Path from root -> parent2 -> (1,1,0)
     cost_p2_to_new = distance_to(znear[1], Node(new_node_x, new_node_y, new_node_theta))
     total_cost_p2 = znear[1].cost + cost_p2_to_new
-    total_p_fail_p2 = znear[1].p_fail + 0.1 # Artificially make parent2's path riskier
-
-    # Temporarily modify parent costs/p_fail for the dominance check within choose_parents
-    # Note: This is a bit of a hack for testing, ideally the dominance check would be isolated
-    original_p1_cost = znear[0].cost
-    original_p1_p_fail = znear[0].p_fail
-    original_p2_cost = znear[1].cost
-    original_p2_p_fail = znear[1].p_fail
+    total_log_survival_p2 = znear[1].log_survival + np.log(1 - 0.1)  # Add risk for parent2
 
     znear[0].cost = total_cost_p1
-    znear[0].p_fail = total_p_fail_p1
+    znear[0].log_survival = total_log_survival_p1
     znear[1].cost = total_cost_p2
-    znear[1].p_fail = total_p_fail_p2
-
+    znear[1].log_survival = total_log_survival_p2
 
     new_nodes = tree.choose_parents(
         znear,
         new_node_x, new_node_y, new_node_theta,
-        dummy_grid_instance_empty.grid # Pass grid data for risk calculation
+        dummy_grid_instance_empty.grid  # Pass grid data for risk calculation
     )
 
-    # Restore original costs/p_fail
-    znear[0].cost = original_p1_cost
-    znear[0].p_fail = original_p1_p_fail
-    znear[1].cost = original_p2_cost
-    znear[1].p_fail = original_p2_p_fail
-
-
-    assert len(new_nodes) == 1 # Only one Pareto-optimal parent should be chosen
+    assert len(new_nodes) == 1  # Only one Pareto-optimal parent should be chosen
     chosen_node = new_nodes[0]
-    assert chosen_node.parent == znear[0] # Parent1 should be the chosen parent
-    # Check the cost and p_fail of the new node (calculated based on the chosen parent)
+    assert chosen_node.parent == znear[0]  # Parent1 should be the chosen parent
+    # Check the cost and log_survival of the new node (calculated based on the chosen parent)
     assert np.isclose(chosen_node.cost, znear[0].cost + cost_p1_to_new)
-    assert np.isclose(chosen_node.p_fail, znear[0].p_fail)
+    assert np.isclose(chosen_node.log_survival, znear[0].log_survival)
 
 
 def test_choose_parents_multiple_pareto_optimal(tree_with_root, potential_parents, dummy_grid_instance_empty):
@@ -101,27 +86,21 @@ def test_choose_parents_multiple_pareto_optimal(tree_with_root, potential_parent
     new_node_x, new_node_y, new_node_theta = 1.0, 1.0, 0
 
     # Assume both parent1 and parent2 offer non-dominated paths to (1,1,0)
-    # Let's set costs/p_fail such that neither dominates the other
+    # Let's set costs/log_survival such that neither dominates the other
     # Path from root -> parent1 -> (1,1,0)
     cost_p1_to_new = distance_to(znear[0], Node(new_node_x, new_node_y, new_node_theta))
     total_cost_p1 = znear[0].cost + cost_p1_to_new
-    total_p_fail_p1 = 0.1 # Higher failure probability
+    total_log_survival_p1 = znear[0].log_survival + np.log(1 - 0.1)  # Higher risk
 
     # Path from root -> parent2 -> (1,1,0)
     cost_p2_to_new = distance_to(znear[1], Node(new_node_x, new_node_y, new_node_theta))
-    total_cost_p2 = znear[1].cost + cost_p2_to_new + 0.5 # Artificially higher cost for parent2
-    total_p_fail_p2 = 0.05 # Lower failure probability
-
-    # Temporarily modify parent costs/p_fail for the dominance check within choose_parents
-    original_p1_cost = znear[0].cost
-    original_p1_p_fail = znear[0].p_fail
-    original_p2_cost = znear[1].cost
-    original_p2_p_fail = znear[1].p_fail
+    total_cost_p2 = znear[1].cost + cost_p2_to_new + 0.5  # Higher cost
+    total_log_survival_p2 = znear[1].log_survival + np.log(1 - 0.05)  # Lower risk
 
     znear[0].cost = total_cost_p1
-    znear[0].p_fail = total_p_fail_p1
+    znear[0].log_survival = total_log_survival_p1
     znear[1].cost = total_cost_p2
-    znear[1].p_fail = total_p_fail_p2
+    znear[1].log_survival = total_log_survival_p2
 
     new_nodes = tree.choose_parents(
         znear,
@@ -129,13 +108,7 @@ def test_choose_parents_multiple_pareto_optimal(tree_with_root, potential_parent
         dummy_grid_instance_empty.grid
     )
 
-    # Restore original costs/p_fail
-    znear[0].cost = original_p1_cost
-    znear[0].p_fail = original_p1_p_fail
-    znear[1].cost = original_p2_cost
-    znear[1].p_fail = original_p2_p_fail
-
-    assert len(new_nodes) == 2 # Both should be returned as they are non-dominated
+    assert len(new_nodes) == 2  # Both should be returned as they are non-dominated
 
     # Check that the returned nodes correspond to the correct parents and metrics
     parents = [n.parent for n in new_nodes]
@@ -145,10 +118,10 @@ def test_choose_parents_multiple_pareto_optimal(tree_with_root, potential_parent
     for node in new_nodes:
         if node.parent == znear[0]:
             assert np.isclose(node.cost, znear[0].cost + cost_p1_to_new)
-            assert np.isclose(node.p_fail, znear[0].p_fail)
+            assert np.isclose(node.log_survival, znear[0].log_survival)
         elif node.parent == znear[1]:
             assert np.isclose(node.cost, znear[1].cost + cost_p2_to_new)
-            assert np.isclose(node.p_fail, znear[1].p_fail)
+            assert np.isclose(node.log_survival, znear[1].log_survival)
         else:
             pytest.fail("Unexpected parent in returned nodes")
 
@@ -163,23 +136,17 @@ def test_choose_parents_dominated_candidates_filtered(tree_with_root, potential_
     # Path from root -> parent1 -> (1,1,0)
     cost_p1_to_new = distance_to(znear[0], Node(new_node_x, new_node_y, new_node_theta))
     total_cost_p1 = znear[0].cost + cost_p1_to_new
-    total_p_fail_p1 = 0.1
+    total_log_survival_p1 = znear[0].log_survival + np.log(1 - 0.1)
 
     # Path from root -> parent2 -> (1,1,0) - dominated by path from parent1
     cost_p2_to_new = distance_to(znear[1], Node(new_node_x, new_node_y, new_node_theta))
-    total_cost_p2 = znear[1].cost + cost_p2_to_new + 0.5 # Higher cost
-    total_p_fail_p2 = total_p_fail_p1 + 0.1 # Higher failure probability
-
-    # Temporarily modify parent costs/p_fail for the dominance check within choose_parents
-    original_p1_cost = znear[0].cost
-    original_p1_p_fail = znear[0].p_fail
-    original_p2_cost = znear[1].cost
-    original_p2_p_fail = znear[1].p_fail
+    total_cost_p2 = znear[1].cost + cost_p2_to_new + 0.5  # Higher cost
+    total_log_survival_p2 = znear[1].log_survival + np.log(1 - 0.2)  # Higher risk
 
     znear[0].cost = total_cost_p1
-    znear[0].p_fail = total_p_fail_p1
+    znear[0].log_survival = total_log_survival_p1
     znear[1].cost = total_cost_p2
-    znear[1].p_fail = total_p_fail_p2
+    znear[1].log_survival = total_log_survival_p2
 
     new_nodes = tree.choose_parents(
         znear,
@@ -187,16 +154,10 @@ def test_choose_parents_dominated_candidates_filtered(tree_with_root, potential_
         dummy_grid_instance_empty.grid
     )
 
-    # Restore original costs/p_fail
-    znear[0].cost = original_p1_cost
-    znear[0].p_fail = original_p1_p_fail
-    znear[1].cost = original_p2_cost
-    znear[1].p_fail = original_p2_p_fail
-
-    assert len(new_nodes) == 1 # Only the non-dominated one should be returned
-    assert new_nodes[0].parent == znear[0] # Parent1 should be the parent
+    assert len(new_nodes) == 1  # Only the non-dominated one should be returned
+    assert new_nodes[0].parent == znear[0]  # Parent1 should be the parent
     assert np.isclose(new_nodes[0].cost, znear[0].cost + cost_p1_to_new)
-    assert np.isclose(new_nodes[0].p_fail, znear[0].p_fail)
+    assert np.isclose(new_nodes[0].log_survival, znear[0].log_survival)
 
 
 def test_choose_parents_with_grid_risk(tree_with_root, potential_parents):

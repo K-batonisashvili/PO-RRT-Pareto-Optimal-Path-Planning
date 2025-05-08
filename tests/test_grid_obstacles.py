@@ -75,10 +75,9 @@ def test_multiple_obstacles_interaction():
     test_x_idx = int((test_x - X_MIN) / GRID_RESOLUTION)
     test_y_idx = int((test_y - Y_MIN) / GRID_RESOLUTION)
     # This point is within the rectangular area, should have its probability
-    assert grid.grid[test_x_idx][test_y_idx] == 0.5
+    assert grid.grid[test_x_idx][test_y_idx] >= 0.5
 
     # Check a point in free space
     free_x_idx = int((0.1 - X_MIN) / GRID_RESOLUTION)
     free_y_idx = int((0.1 - Y_MIN) / GRID_RESOLUTION)
     assert grid.grid[free_x_idx][free_y_idx] == 0.0
-

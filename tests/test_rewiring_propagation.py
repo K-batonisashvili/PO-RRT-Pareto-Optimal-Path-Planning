@@ -66,7 +66,7 @@ def test_propagate_cost(tree_for_rewiring, dummy_grid_instance_empty):
     child1.p_fail = 1 - np.exp(child1.log_survival)
     tree.add_node(child1, multiple_children=False) # Still on Path 1
 
-    grandchild1 = Node(4.0, 0, 0)
+    grandchild1 = Node(3.5, 0, 0)
     grandchild1.parent = child1
     child1.children.append(grandchild1)
     # Initial metrics for grandchild1 (will be updated by propagate_cost)

@@ -315,7 +315,6 @@ class Grid:
         self.x_max = X_MAX
         self.y_min = Y_MIN
         self.y_max = Y_MAX
-        self.obstacles = obstacles
 
         # Process all obstacles
         for obstacle in obstacles:
@@ -334,27 +333,36 @@ class Grid:
 
     def add_circular_obstacle(self, center, radius, safe_dist):
         """
-        Adding a circular obstacle to the grid.
+        Add a circular obstacle to the grid, prioritizing the highest probability.
         """
-        cx, cy = int((center[0] - X_MIN) / GRID_RESOLUTION), int((center[1] - Y_MIN) / GRID_RESOLUTION)
-        rad_cells, safe_cells = int(radius / GRID_RESOLUTION), int(safe_dist / GRID_RESOLUTION)
+        cx, cy = int((center[0] - self.x_min) / self.resolution), int((center[1] - self.y_min) / self.resolution)
+        rad_cells, safe_cells = int(radius / self.resolution), int(safe_dist / self.resolution)
 
         for x in range(cx - rad_cells - safe_cells, cx + rad_cells + safe_cells + 1):
             for y in range(cy - rad_cells - safe_cells, cy + rad_cells + safe_cells + 1):
                 if 0 <= x < self.width and 0 <= y < self.height:
                     dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
                     if dist <= rad_cells:
-                        self.grid[x][y] = 0.9
+                        new_prob = 0.9
                     elif dist <= rad_cells + safe_cells:
-                        self.grid[x][y] = 0.9 * (1 - (dist - rad_cells) / safe_cells)
+                        new_prob = 0.9 * (1 - (dist - rad_cells) / safe_cells)
+                    else:
+                        new_prob = 0.0
+
+                    # Update the grid only if the new probability is higher
+                    self.grid[x][y] = max(self.grid[x][y], new_prob)
 
     def add_unknown_area(self, x_range, y_range, probability):
         """
-        Adding a square unknown area to the grid.
+        Add a rectangular unknown area to the grid, prioritizing the highest probability.
         """
-        x_start, x_end = int((x_range[0] - X_MIN) / GRID_RESOLUTION), int((x_range[1] - X_MIN) / GRID_RESOLUTION)
-        y_start, y_end = int((y_range[0] - Y_MIN) / GRID_RESOLUTION), int((y_range[1] - Y_MIN) / GRID_RESOLUTION)
-        self.grid[x_start:x_end+1, y_start:y_end+1] = probability
+        x_start, x_end = int((x_range[0] - self.x_min) / self.resolution), int((x_range[1] - self.x_min) / self.resolution)
+        y_start, y_end = int((y_range[0] - self.y_min) / self.resolution), int((y_range[1] - self.y_min) / self.resolution)
+
+        for x in range(x_start, x_end + 1):
+            for y in range(y_start, y_end + 1):
+                # Update the grid only if the new probability is higher
+                self.grid[x][y] = max(self.grid[x][y], probability)
 
 # --------------- Grid Class --------------- #
 

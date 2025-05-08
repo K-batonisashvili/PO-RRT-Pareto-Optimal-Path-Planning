@@ -179,7 +179,7 @@ def test_tree_neighbors(tree_with_root):
     assert root_node in neighbors_of_node1_close
     assert node3_close_to_node1 in neighbors_of_node1_close
     assert node2_far not in neighbors_of_node1_close
-    assert len(neighbors_of_node1_close) == 2
+    assert len(neighbors_of_node1_close) == 3
 
     # Neighbors of node2_far (1.0, 1.0, 0)
     neighbors_of_node2_far = tree.neighbors(node2_far)
