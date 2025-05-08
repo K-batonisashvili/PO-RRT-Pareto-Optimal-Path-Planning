@@ -14,10 +14,8 @@ X_MIN, X_MAX = 0.0, 4.0
 Y_MIN, Y_MAX = 0.0, 4.0
 GRID_WIDTH = int((X_MAX - X_MIN) / GRID_RESOLUTION)
 GRID_HEIGHT = int((Y_MAX - Y_MIN) / GRID_RESOLUTION)
-MAX_STEERING_ANGLE = np.pi / 3
 PARETO_RADIUS = 0.25
 DEFAULT_STEP_SIZE = 0.1
-PARETO_DOMINANCE_TOLERANCE = 1e-8
 PROBABILITY_THRESHOLD = 0.01
 
 # ----------------------- #
@@ -377,7 +375,7 @@ class Grid:
 ###############################
 ## CENTRAL RRT STAR FUNCTION ##
 ###############################
-def rrt_star(start, goal, grid, failure_prob_values, max_iter=5000, step_size=DEFAULT_STEP_SIZE, threshold=PROBABILITY_THRESHOLD):
+def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size=DEFAULT_STEP_SIZE, threshold=PROBABILITY_THRESHOLD):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
@@ -508,7 +506,7 @@ def main():
 
     grid = Grid(GRID_WIDTH, GRID_HEIGHT, obstacles)
 
-    multiple_paths = rrt_star(start, goal, grid, failure_prob_values)
+    multiple_paths = PO_RRT_Star(start, goal, grid, failure_prob_values)
     plot_paths_metrics(multiple_paths)
 
     
