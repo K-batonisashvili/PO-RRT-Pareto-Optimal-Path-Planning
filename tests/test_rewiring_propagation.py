@@ -3,7 +3,7 @@ import numpy as np
 from PO_RRT_Star import Node, Path, Tree, Grid, GRID_WIDTH, GRID_HEIGHT, X_MIN, Y_MIN, GRID_RESOLUTION, PARETO_RADIUS
 from helper_functions import distance_to
 # Need to import the main module to temporarily change PARETO_RADIUS for some tests
-import PO_RRT_star
+import PO_RRT_Star
 
 # Create a dummy Grid for Tree initialization and cost calculation using a fixture
 @pytest.fixture
@@ -138,7 +138,7 @@ def test_rewire_dominating_path(tree_for_rewiring, new_node_candidate, dummy_gri
 
     # Temporarily increase PARETO_RADIUS to include node2 as a neighbor of new_node
     original_pareto_radius = PARETO_RADIUS
-    PO_RRT_star.PARETO_RADIUS = 1.0 # Assuming 1.0 is enough to include node2
+    PO_RRT_Star.PARETO_RADIUS = 1.0 # Assuming 1.0 is enough to include node2
 
     # Find neighbors of new_node with the temporarily increased radius
     znear = tree.neighbors(new_node)
@@ -165,7 +165,7 @@ def test_rewire_dominating_path(tree_for_rewiring, new_node_candidate, dummy_gri
     assert tree.rewire_counts == original_rewire_count + 1
 
     # Restore original PARETO_RADIUS
-    PO_RRT_star.PARETO_RADIUS = original_pareto_radius
+    PO_RRT_Star.PARETO_RADIUS = original_pareto_radius
 
 
 def test_rewire_no_dominance(tree_for_rewiring, new_node_candidate, dummy_grid_instance_empty):
@@ -198,7 +198,7 @@ def test_rewire_no_dominance(tree_for_rewiring, new_node_candidate, dummy_grid_i
 
     # Temporarily increase PARETO_RADIUS to include node2
     original_pareto_radius = PARETO_RADIUS
-    PO_RRT_star.PARETO_RADIUS = 1.0
+    PO_RRT_Star.PARETO_RADIUS = 1.0
     znear = tree.neighbors(new_node)
     assert node2 in znear
 
@@ -223,7 +223,7 @@ def test_rewire_no_dominance(tree_for_rewiring, new_node_candidate, dummy_grid_i
     assert tree.rewire_counts == original_rewire_count # No rewiring should happen
 
     # Restore original PARETO_RADIUS
-    PO_RRT_star.PARETO_RADIUS = original_pareto_radius
+    PO_RRT_Star.PARETO_RADIUS = original_pareto_radius
 
 
 def test_rewire_with_grid_risk_propagation(tree_for_rewiring, new_node_candidate):
@@ -264,7 +264,7 @@ def test_rewire_with_grid_risk_propagation(tree_for_rewiring, new_node_candidate
 
     # Temporarily increase PARETO_RADIUS
     original_pareto_radius = PARETO_RADIUS
-    PO_RRT_star.PARETO_RADIUS = 1.0
+    PO_RRT_Star.PARETO_RADIUS = 1.0
     znear = tree.neighbors(new_node)
     assert node2 in znear
 
@@ -287,6 +287,6 @@ def test_rewire_with_grid_risk_propagation(tree_for_rewiring, new_node_candidate
     assert child1.path == node2.path
 
     # Restore original PARETO_RADIUS
-    PO_RRT_star.PARETO_RADIUS = original_pareto_radius
+    PO_RRT_Star.PARETO_RADIUS = original_pareto_radius
 
 
