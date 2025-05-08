@@ -28,9 +28,9 @@ Following the logic of 1, we are presented with paths that are either lower in c
 
 
 
-[![codecov](https://codecov.io/gh/K-batonisashvili/Computational-Mechanics-Nonlinear-Systems/graph/badge.svg?token=1A0E104BIQ)](https://codecov.io/gh/K-batonisashvili/Computational-Mechanics-Nonlinear-Systems)
+[![codecov](https://codecov.io/gh/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/graph/badge.svg?token=JSEBHATNLH)](https://codecov.io/gh/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning)
 
-[![Run Tests](https://github.com/K-batonisashvili/Computational-Mechanics-Nonlinear-Systems/actions/workflows/Tests.yml/badge.svg)](https://github.com/K-batonisashvili/Computational-Mechanics-Nonlinear-Systems/actions/workflows/Tests.yml)
+[![Run Tests](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml/badge.svg)](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml)
 
 [![python](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/)
 ![os](https://img.shields.io/badge/os-ubuntu%20|%20macos%20|%20windows-blue.svg)
