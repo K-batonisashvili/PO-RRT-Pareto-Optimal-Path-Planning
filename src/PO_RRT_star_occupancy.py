@@ -315,6 +315,7 @@ class Grid:
         self.x_max = X_MAX
         self.y_min = Y_MIN
         self.y_max = Y_MAX
+        self.obstacles = obstacles
 
         # Process all obstacles
         for obstacle in obstacles:
