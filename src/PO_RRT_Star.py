@@ -372,9 +372,9 @@ class Grid:
 
 
 
-###############################
-## CENTRAL RRT STAR FUNCTION ##
-###############################
+##################################
+## CENTRAL PO_RRT_STAR FUNCTION ##
+##################################
 def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size=DEFAULT_STEP_SIZE, threshold=PROBABILITY_THRESHOLD):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
@@ -470,16 +470,13 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
 
     return multiple_paths 
 
-###############################
-## CENTRAL RRT STAR FUNCTION ##
-###############################
-
-
+##################################
+## CENTRAL PO_RRT_STAR FUNCTION ##
+##################################
 
 
 
 # Main code
-
 def main():
     
     # Create the main application window
