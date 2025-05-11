@@ -61,26 +61,25 @@ def init_progress_plot_3d(start, goal, x_lim, y_lim, obstacles, z_lim=(0.0, 1.0)
 
     return fig, ax, lc, edge_segments
 
-def update_progress_plot_3d(lc, edge_segments, parent_node, new_node, pause_time=0.001):
+def update_progress_plot_3d(lc, edge_segments, parent_node, child_node, remove=False, pause_time=0.001):
     """
-    Append the new edge from parent_node to new_node, update the Line3DCollection,
-    and redraw the figure.
-
-    Arguments:
-    - lc: the Line3DCollection returned by init_progress_plot_3d
-    - edge_segments: the list returned by init_progress_plot_3d
-    - parent_node, new_node: Node objects with .x, .y, .p_fail
-    - pause_time: how long to pause (seconds) after redraw
+    Update the 3D progress plot with new edges or remove old edges.
     """
-    # Add the new segment
-    edge_segments.append([
-        (parent_node.x,  parent_node.y,  parent_node.p_fail),
-        (new_node.x,     new_node.y,     new_node.p_fail)
-    ])
+    edge = [(parent_node.x, parent_node.y, parent_node.p_fail),
+            (child_node.x, child_node.y, child_node.p_fail)]
+    
+    if remove:
+        # Check if the edge exists before removing
+        if edge in edge_segments:
+            edge_segments.remove(edge)
+        else:
+            print(f"No edge between {parent_node} and {child_node} to remove.")
+    else:
+        # Add the edge between parent_node and child_node
+        edge_segments.append(edge)
 
-    # Bulk‐update and redraw
+    # Update the line collection
     lc.set_segments(edge_segments)
-    plt.draw()
     plt.pause(pause_time)
 
 def plot_paths_metrics(paths):
@@ -105,3 +104,16 @@ def plot_paths_metrics(paths):
     ax.legend()
     plt.show(block=True)
     print("Paths metrics:")
+
+def redraw_tree(tree, lc, edge_segments):
+    """
+    Redraw the entire tree to ensure the plot is consistent with the tree structure.
+    """
+    edge_segments.clear()
+    for path in tree.paths:
+        for node in path.nodes:
+            if node.parent:
+                edge_segments.append([(node.parent.x, node.parent.y, node.parent.p_fail),
+                                      (node.x, node.y, node.p_fail)])
+    lc.set_segments(edge_segments)
+    plt.pause(0.001)

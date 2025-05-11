@@ -3,7 +3,7 @@ import logging
 import tkinter as tk
 from tkinter import simpledialog
 from helper_functions import distance_to, get_coord, is_collision_free, steer
-from visualization import init_progress_plot_3d, update_progress_plot_3d, plot_paths_metrics
+from visualization import init_progress_plot_3d, update_progress_plot_3d, plot_paths_metrics, redraw_tree
 
 logging.basicConfig(level=logging.INFO)
 
@@ -14,8 +14,8 @@ X_MIN, X_MAX = 0.0, 4.0
 Y_MIN, Y_MAX = 0.0, 4.0
 GRID_WIDTH = int((X_MAX - X_MIN) / GRID_RESOLUTION)
 GRID_HEIGHT = int((Y_MAX - Y_MIN) / GRID_RESOLUTION)
-PARETO_RADIUS = 0.25
-DEFAULT_STEP_SIZE = 0.1
+PARETO_RADIUS = 0.35
+DEFAULT_STEP_SIZE = 0.2
 PROBABILITY_THRESHOLD = 0.01
 
 # ----------------------- #
@@ -36,6 +36,7 @@ class Tree:
         self.rewire_neighbors_count = 0
         self.grid = grid
         self.node_count = 0 # Debugger
+        self.path_count = 0 # Debugger
 
     def add_node(self, node, multiple_children=False):
         """
@@ -61,6 +62,29 @@ class Tree:
             self.paths.append(new_path)
         node.added_to_tree = True
         self.node_count += 1
+    
+    def remove_node(self, node):
+        """
+        Completely remove a node from the tree, including all paths and references.
+        """
+        # Remove the node from all paths
+        for path in self.paths:
+            if node in path.nodes:
+                path.nodes.remove(node)
+
+        # Remove the node from its parent's children list
+        if node.parent:
+            node.parent.children.remove(node)
+
+        # Remove the node's children (if any)
+        for child in node.children:
+            child.parent = None
+
+        # Remove the node from the tree's node count
+        self.node_count -= 1
+
+        # Log the removal for debugging
+        logging.info(f"Removed orphaned node: x={node.x}, y={node.y}, theta={node.theta}")
 
     def nearest(self, rand_node):
         """
@@ -69,7 +93,7 @@ class Tree:
         all_nodes = [node for path in self.paths for node in path.nodes]
         return min(all_nodes, key=lambda n: distance_to(n, rand_node))
     
-    def rewire(self, znear, new_node, grid):
+    def rewire(self, znear, new_node, grid, lc, edge_segments):
         """
         Rewire the tree to optimize paths based on cost and failure probability.
         """
@@ -93,13 +117,18 @@ class Tree:
             if self.pareto_dominates(new_cost, new_p_fail, neighbor.cost, neighbor.p_fail):
                 # detach neighbor from old parent and old path
                 old_parent = neighbor.parent
-                if old_parent and neighbor in old_parent.children:
+                if old_parent:
+                    # Remove the old edge from the plot
+                    update_progress_plot_3d(lc, edge_segments, old_parent, neighbor, remove=True)
                     old_parent.children.remove(neighbor)
 
                 for path in self.paths:
                     if neighbor in path.nodes:
                         path.nodes.remove(neighbor)
                         break
+
+                if old_parent and not old_parent.children and old_parent.parent is None:
+                    self.remove_node(old_parent)
 
                 # attach neighbor under new_node
                 neighbor.parent = new_node
@@ -115,6 +144,10 @@ class Tree:
                     if new_node in path.nodes:
                         path.add_node(neighbor)
                         break
+
+                # Add the new edge to the plot
+                update_progress_plot_3d(lc, edge_segments, new_node, neighbor)
+
 
                 # propagate down the subtree
                 self.propagate_cost(neighbor, grid)
@@ -164,10 +197,11 @@ class Tree:
 
     def neighbors(self, node):
         """
-        Find all nodes within a static PARETO_RADIUS around the given node.
+        Find all unique nodes within a static PARETO_RADIUS around the given node.
+        A node is considered unique if it has distinct (x, y, theta, cost, p_fail).
         """
         neighbors = []
-        raw = []
+        seen = set()  # To track unique nodes based on their attributes
         x_min, x_max = node.x - PARETO_RADIUS, node.x + PARETO_RADIUS
         y_min, y_max = node.y - PARETO_RADIUS, node.y + PARETO_RADIUS
 
@@ -175,7 +209,11 @@ class Tree:
             for n in path.nodes:
                 if n is not node and x_min <= n.x <= x_max and y_min <= n.y <= y_max:
                     if distance_to(n, node) < PARETO_RADIUS:
-                        neighbors.append(n)
+                        # Create a tuple of attributes to identify duplicates
+                        node_signature = (n.x, n.y, n.theta, n.cost, n.p_fail)
+                        if node_signature not in seen:
+                            neighbors.append(n)
+                            seen.add(node_signature)  # Mark this node as seen
 
         return neighbors
 
@@ -227,6 +265,11 @@ class Tree:
             new_node.p_fail         = p_fail
             final_pareto_nodes.append(new_node)
 
+        if len(final_pareto_nodes) > 8:
+            logging.info(f"Found {len(final_pareto_nodes)} Pareto‐optimal nodes.")
+            for node in final_pareto_nodes:
+                logging.info(f"Node: {node}, Cost: {node.cost}, p_fail: {node.p_fail}")
+
         return final_pareto_nodes
 
     def get_path_to(self, goal_node):
@@ -237,6 +280,7 @@ class Tree:
             if goal_node in path.nodes:
                 return path
         return None
+
     
 # --------------- Tree Class --------------- #
 
@@ -405,12 +449,16 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                 znear = tree.neighbors(new_node)
                 
                 # Check if znear contains any nodes, if it doesn't, set the nearest node as znear
-                if not znear:
-                    znear = [nearest_node]
+                # if not znear:
+                #     znear = [nearest_node]
 
                 # Exclude the goal node from znear to prevent rewiring through it
-                znear = [n for n in znear if n is not goal_node]
+                znear = [n for n in znear if n.x != goal_node.x or n.y != goal_node.y]
                 
+                # if len(start_node.children) > 5:
+                #     print(f"Start node has {len(start_node.children)} children")
+                #     print(f"Znear: {new_nodes}")   
+
                 new_nodes = tree.choose_parents(
                         znear, 
                         new_node.x, 
@@ -418,13 +466,15 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                         new_node.theta, 
                         grid.grid
                     )
-                                       
+
+                                    
                 if len(new_nodes) > 1:
                     # multiple possible parents, 
                     for nn in new_nodes:
                         multiple_children = True if len(nn.parent.children) > 1 else False
-                        if multiple_children:
-                            print(f"Multiple children: {len(nn.parent.children)}")                        # 1) goal check per branch
+                        # if len(nn.parent.children) > 10:
+                        #     print(f"This is the parent: {nn.parent}")
+                        #     print(f"Multiple children: {len(nn.parent.children)}")                        # 1) goal check per branch
                         if distance_to(nn, goal) < step_size:
                             # connect to goal exactly once per branch
                             goal_node.parent        = nn
@@ -433,37 +483,43 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                             goal_node.log_survival  = nn.log_survival
                             goal_node.p_fail        = 1 - np.exp(goal_node.log_survival)
 
-                            tree.add_node(goal_node, parent=nn)
+                            tree.add_node(goal_node, multiple_children=multiple_children)
+                            print(f"Goal node added to tree with cost: {goal_node.cost}, p_fail: {goal_node.p_fail}")
                             update_progress_plot_3d(lc, edge_segments, nn, goal_node)
 
                             raw_path   = tree.get_path_to(goal_node).nodes[:]
                             multiple_paths.append((raw_path, goal_node.cost, goal_node.p_fail))
                         else:
                             tree.add_node(nn, multiple_children=multiple_children)
-                            tree.rewire(tree.neighbors(nn), nn, grid.grid)
+                            tree.rewire(tree.neighbors(nn), nn, grid.grid, lc, edge_segments)
                             update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
                 else:
                     # single child branch
-                    nn = new_nodes[0]
-                    if distance_to(nn, goal) < step_size:
-                        # ─── goal handling ─────────────────────────
-                        goal_node.parent        = nn
-                        nn.children.append(goal_node)
-                        goal_node.cost          = nn.cost + distance_to(nn, goal_node)
-                        goal_node.log_survival  = nn.log_survival
-                        goal_node.p_fail        = 1 - np.exp(goal_node.log_survival)
+                    for nn in new_nodes:
+                        multiple_children = True if len(nn.parent.children) > 1 else False
+                        if distance_to(nn, goal) < step_size:
+                            # ─── goal handling ─────────────────────────
+                            goal_node.parent        = nn
+                            nn.children.append(goal_node)
+                            goal_node.cost          = nn.cost + distance_to(nn, goal_node)
+                            goal_node.log_survival  = nn.log_survival
+                            goal_node.p_fail        = 1 - np.exp(goal_node.log_survival)
 
-                        tree.add_node(goal_node, parent=nn)
-                        update_progress_plot_3d(lc, edge_segments, nn, goal_node)
+                            tree.add_node(goal_node, multiple_children=multiple_children)
+                            print(f"Goal node added to tree with cost: {goal_node.cost}, p_fail: {goal_node.p_fail}")
+                            update_progress_plot_3d(lc, edge_segments, nn, goal_node)
 
-                        raw_path   = tree.get_path_to(goal_node).nodes[:]
-                        multiple_paths.append((raw_path, goal_node.cost, goal_node.p_fail))
+                            raw_path   = tree.get_path_to(goal_node).nodes[:]
+                            multiple_paths.append((raw_path, goal_node.cost, goal_node.p_fail))
 
-                    # 2) Not near goal, so add the new node to the tree
-                    else:
-                        tree.add_node(nn)
-                        tree.rewire(tree.neighbors(nn), nn, grid.grid)
-                        update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
+                        # 2) Not near goal, so add the new node to the tree
+                        else:
+                            # Add the new node to the tree
+                            # multiple_children = True if len(nn.parent.children) > 1 else False
+
+                            tree.add_node(nn, multiple_children=multiple_children)
+                            tree.rewire(tree.neighbors(nn), nn, grid.grid, lc, edge_segments)
+                            update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
 
     return multiple_paths 
 
@@ -479,17 +535,18 @@ def main():
     # Create the main application window
     root = tk.Tk()
     root.withdraw()  # Hide the root window
+    obstacles = []
 
     
     start, goal = (0.3, 2, 0), (3.5, 0.5, 0)
 
     # Obstacle dictionary
-    obstacles = [
-        {"type": "circular", "center": (2.0, 4), "radius": 0.4, "safe_dist": 0.2},
-        {"type": "circular", "center": (2.0, 2), "radius": 0.4, "safe_dist": 0.2},
-        {"type": "circular", "center": (2.0, 0), "radius": 0.4, "safe_dist": 0.2},
-        {"type": "rectangular", "x_range": (1.5, 2.5), "y_range": (0.3, 1.7), "probability": 0.05}
-    ]
+    # obstacles = [
+    #     {"type": "circular", "center": (2.0, 4), "radius": 0.4, "safe_dist": 0.2},
+    #     {"type": "circular", "center": (2.0, 2), "radius": 0.4, "safe_dist": 0.2},
+    #     {"type": "circular", "center": (2.0, 0), "radius": 0.4, "safe_dist": 0.2},
+    #     {"type": "rectangular", "x_range": (1.5, 2.5), "y_range": (0.3, 1.7), "probability": 0.05}
+    # ]
 
     
     failure_prob_values = simpledialog.askstring("Input", "Enter the failure probabilities (comma-separated):")
