@@ -72,8 +72,8 @@ def update_progress_plot_3d(lc, edge_segments, parent_node, child_node, remove=F
         # Check if the edge exists before removing
         if edge in edge_segments:
             edge_segments.remove(edge)
-        else:
-            print(f"No edge between {parent_node} and {child_node} to remove.")
+        # else:
+        #     print(f"No edge between {parent_node} and {child_node} to remove.")
     else:
         # Add the edge between parent_node and child_node
         edge_segments.append(edge)
