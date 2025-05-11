@@ -422,7 +422,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                 if len(new_nodes) > 1:
                     # multiple possible parents, 
                     for nn in new_nodes:
-                        multiple_children = True if len(nn.parent.children) > 2 else False
+                        multiple_children = True if len(nn.parent.children) > 1 else False
                         if multiple_children:
                             print(f"Multiple children: {len(nn.parent.children)}")                        # 1) goal check per branch
                         if distance_to(nn, goal) < step_size:
@@ -445,9 +445,6 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                 else:
                     # single child branch
                     nn = new_nodes[0]
-                    multiple_children = True if len(nn.parent.children) > 2 else False
-                    if multiple_children:
-                        print(f"Multiple children: {len(nn.parent.children)}")
                     if distance_to(nn, goal) < step_size:
                         # ─── goal handling ─────────────────────────
                         goal_node.parent        = nn
@@ -464,7 +461,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
 
                     # 2) Not near goal, so add the new node to the tree
                     else:
-                        tree.add_node(nn, multiple_children=multiple_children)
+                        tree.add_node(nn)
                         tree.rewire(tree.neighbors(nn), nn, grid.grid)
                         update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
 
