@@ -127,9 +127,6 @@ class Tree:
                         path.nodes.remove(neighbor)
                         break
 
-                if old_parent and not old_parent.children and old_parent.parent is None:
-                    self.remove_node(old_parent)
-
                 # attach neighbor under new_node
                 neighbor.parent = new_node
                 new_node.children.append(neighbor)
@@ -157,8 +154,7 @@ class Tree:
         """
         Check if node1 dominates node2 in terms of cost and failure probability.
         """
-        return (cost1 < cost2 and fail1 < fail2) or \
-        (cost1 <= cost2 and fail1 < fail2) or \
+        return (cost1 <= cost2 and fail1 < fail2) or \
         (cost1 < cost2 and fail1  <= fail2)
 
     def propagate_cost(self, root, grid):
@@ -170,7 +166,7 @@ class Tree:
         new_path = root.path #
         while queue:
             node = queue.pop(0)
-            for child in node.children.copy():    
+            for child in node.children:    
                 # 1) cost
                 child.cost = node.cost + distance_to(node, child)
 
@@ -484,7 +480,9 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                             goal_node.p_fail        = 1 - np.exp(goal_node.log_survival)
 
                             tree.add_node(goal_node, multiple_children=multiple_children)
+                            tree.add_node(nn, multiple_children=multiple_children)
                             print(f"Goal node added to tree with cost: {goal_node.cost}, p_fail: {goal_node.p_fail}")
+                            update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
                             update_progress_plot_3d(lc, edge_segments, nn, goal_node)
 
                             raw_path   = tree.get_path_to(goal_node).nodes[:]
@@ -505,8 +503,10 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                             goal_node.log_survival  = nn.log_survival
                             goal_node.p_fail        = 1 - np.exp(goal_node.log_survival)
 
+                            tree.add_node(nn, multiple_children=multiple_children)
                             tree.add_node(goal_node, multiple_children=multiple_children)
                             print(f"Goal node added to tree with cost: {goal_node.cost}, p_fail: {goal_node.p_fail}")
+                            update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
                             update_progress_plot_3d(lc, edge_segments, nn, goal_node)
 
                             raw_path   = tree.get_path_to(goal_node).nodes[:]
