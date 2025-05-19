@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 # Define constants
-GRID_RESOLUTION = 0.05
+GRID_RESOLUTION = 0.1
 X_MIN, X_MAX = 0.0, 4.0
 Y_MIN, Y_MAX = 0.0, 4.0
 GRID_WIDTH = int((X_MAX - X_MIN) / GRID_RESOLUTION)
@@ -147,7 +147,8 @@ class Tree:
 
 
                 # propagate down the subtree
-                self.propagate_cost(neighbor, grid)
+                self.propagate_cost(neighbor, grid, lc, edge_segments)
+
                 self.rewire_counts += 1
 
     def pareto_dominates(self, cost1, fail1, cost2, fail2):
@@ -157,16 +158,21 @@ class Tree:
         return (cost1 <= cost2 and fail1 < fail2) or \
         (cost1 < cost2 and fail1  <= fail2)
 
-    def propagate_cost(self, root, grid):
+    def propagate_cost(self, root, grid, lc=None, edge_segments=None):
         """
         Iteratively propagate cost & failure updates down the
         subtree of .children under `root`, avoiding recursion.
         """
         queue = [root]
-        new_path = root.path #
+        new_path = root.path
         while queue:
             node = queue.pop(0)
-            for child in node.children:    
+            for child in node.children:
+                # Store old edge for removal
+                if lc is not None and edge_segments is not None:
+                    # Remove the old edge before updating values
+                    update_progress_plot_3d(lc, edge_segments, node, child, remove=True)
+
                 # 1) cost
                 child.cost = node.cost + distance_to(node, child)
 
@@ -190,6 +196,10 @@ class Tree:
                 # 5) guard against stray cycles: only follow actual parent→child links
                 if child.parent is node:
                     queue.append(child)
+
+                # Draw the new edge with updated p_fail
+                if lc is not None and edge_segments is not None:
+                    update_progress_plot_3d(lc, edge_segments, node, child)
 
     def neighbors(self, node):
         """
@@ -349,10 +359,10 @@ class Grid:
         self.height = height
         self.grid = np.zeros((width, height))
         self.resolution = GRID_RESOLUTION
-        self.x_min = X_MIN
-        self.x_max = X_MAX
-        self.y_min = Y_MIN
-        self.y_max = Y_MAX
+        self.x_min = 0
+        self.x_max = width
+        self.y_min = 0
+        self.y_max = height
         self.obstacles = obstacles
 
         # Process all obstacles
@@ -485,8 +495,12 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                             update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
                             update_progress_plot_3d(lc, edge_segments, nn, goal_node)
 
-                            raw_path   = tree.get_path_to(goal_node).nodes[:]
-                            multiple_paths.append((raw_path, goal_node.cost, goal_node.p_fail))
+                            raw_path   = tree.get_path_to(goal_node)
+                            multiple_paths.append({
+                                "path": raw_path,
+                                "cost": raw_path.cost,
+                                "p_fail": raw_path.p_fail
+                            })                        
                         else:
                             tree.add_node(nn, multiple_children=multiple_children)
                             tree.rewire(tree.neighbors(nn), nn, grid.grid, lc, edge_segments)
@@ -509,9 +523,12 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                             update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
                             update_progress_plot_3d(lc, edge_segments, nn, goal_node)
 
-                            raw_path   = tree.get_path_to(goal_node).nodes[:]
-                            multiple_paths.append((raw_path, goal_node.cost, goal_node.p_fail))
-
+                            raw_path   = tree.get_path_to(goal_node)
+                            multiple_paths.append({
+                                "path": raw_path,
+                                "cost": raw_path.cost,
+                                "p_fail": raw_path.p_fail
+                            })
                         # 2) Not near goal, so add the new node to the tree
                         else:
                             # Add the new node to the tree
@@ -541,12 +558,12 @@ def main():
     start, goal = (0.3, 2, 0), (3.5, 0.5, 0)
 
     # Obstacle dictionary
-    # obstacles = [
-    #     {"type": "circular", "center": (2.0, 4), "radius": 0.4, "safe_dist": 0.2},
-    #     {"type": "circular", "center": (2.0, 2), "radius": 0.4, "safe_dist": 0.2},
-    #     {"type": "circular", "center": (2.0, 0), "radius": 0.4, "safe_dist": 0.2},
-    #     {"type": "rectangular", "x_range": (1.5, 2.5), "y_range": (0.3, 1.7), "probability": 0.05}
-    # ]
+    obstacles = [
+        {"type": "circular", "center": (2.0, 4), "radius": 0.4, "safe_dist": 0.2},
+        {"type": "circular", "center": (2.0, 2), "radius": 0.4, "safe_dist": 0.2},
+        {"type": "circular", "center": (2.0, 0), "radius": 0.4, "safe_dist": 0.2},
+        {"type": "rectangular", "x_range": (1.5, 2.5), "y_range": (0.3, 1.7), "probability": 0.05}
+    ]
 
     
     failure_prob_values = simpledialog.askstring("Input", "Enter the failure probabilities (comma-separated):")

@@ -11,7 +11,7 @@ def distance_to(a, b):
 
 def get_coord(node):
     """
-    Get node goordinates.
+    Get node oordinates.
     """
     return (node.x, node.y)
 
