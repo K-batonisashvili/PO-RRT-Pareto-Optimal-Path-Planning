@@ -1,6 +1,7 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import pytest
-from PO_RRT_Star import Node, Tree, Grid, GRID_RESOLUTION
+from PO_RRT_Star import Node, Tree, Grid
 from visualization import init_progress_plot_3d, update_progress_plot_3d
 
 def test_rewire_prefers_lower_risk_path_with_plot():
@@ -27,6 +28,7 @@ def test_rewire_prefers_lower_risk_path_with_plot():
     # Manually create optimal path nodes outside the unknown area
     n1 = Node(4, 2, 0)
     n2 = Node(6, 2, 0)
+    goal_copy = Node(8, 2, 0)
     for n, parent in zip([n1, n2, goal], [start, n1, n2]):
         n.parent = parent
         parent.children.append(n)
@@ -40,25 +42,29 @@ def test_rewire_prefers_lower_risk_path_with_plot():
     n1_risk = Node(4, 4, 0)
     n2_risk = Node(6, 4, 0)
     goal_risk = Node(8, 4, 0)
-    for n, parent in zip([n1_risk, n2_risk, goal_risk, goal], [start, n1_risk, n2_risk, goal_risk]):
+    for n, parent in zip([n1_risk, n2_risk, goal_risk, goal_copy], [start, n1_risk, n2_risk, goal_risk]):
+        multiple_children = False
+        if parent == start:
+            multiple_children = True
         n.parent = parent
         parent.children.append(n)
         n.cost = parent.cost + np.linalg.norm([n.x - parent.x, n.y - parent.y])
         # Add risk from grid
-        xi = int((n.x - grid.x_min) / grid.resolution)
-        yi = int((n.y - grid.y_min) / grid.resolution)
+        xi = int(n.x / grid.width * (grid.grid.shape[0] - 1))
+        yi = int(n.y / grid.height * (grid.grid.shape[1] - 1))
         raw_p = grid.grid[xi, yi]
         log_s_step = np.log(1 - raw_p) if raw_p > 0 else 0.0
         n.log_survival = parent.log_survival + log_s_step
         n.p_fail = 1 - np.exp(n.log_survival)
-        tree.add_node(n)
+        tree.add_node(n, multiple_children=multiple_children)
         update_progress_plot_3d(lc, edge_segments, parent, n, pause_time=0.2)
 
     # Show the tree before rewiring
-    import matplotlib.pyplot as plt
     plt.pause(1.0)
 
     # test rewire: try to rewire goal_risk to n2 (the optimal path)
+    znear1 = [n2_risk]
+    tree.rewire(znear1, n1, grid.grid, lc, edge_segments)
     znear = [goal_risk]
     tree.rewire(znear, n2, grid.grid, lc, edge_segments)
 

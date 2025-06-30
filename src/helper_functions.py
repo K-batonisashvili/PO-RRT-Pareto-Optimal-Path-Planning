@@ -19,8 +19,12 @@ def is_collision_free(node, grid):
     """
     Check if node is inside the grid and not in collision with obstacles.
     """
-    x_idx, y_idx = int((node.x - grid.x_min) / grid.resolution), int((node.y - grid.y_min) / grid.resolution)
-    return 0 <= x_idx < grid.width and 0 <= y_idx < grid.height and grid.grid[x_idx, y_idx] < 0.3 # 0.3 threshold for collision
+    x_idx, y_idx = int(node.x), int(node.y)
+    return (
+        0 <= x_idx < grid.width and
+        0 <= y_idx < grid.height and
+        grid.grid[x_idx, y_idx] < 0.3  # 0.3 threshold for collision
+    )
 
 def steer(from_node, to_node, step_size):
     """

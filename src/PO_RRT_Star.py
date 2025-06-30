@@ -3,19 +3,15 @@ import logging
 import tkinter as tk
 from tkinter import simpledialog
 from helper_functions import distance_to, get_coord, is_collision_free, steer
-from visualization import init_progress_plot_3d, update_progress_plot_3d, plot_paths_metrics, redraw_tree
+from visualization import init_progress_plot_3d, update_progress_plot_3d, plot_paths_metrics, redraw_tree, plot_full_paths, plot_paths_summary
 
 logging.basicConfig(level=logging.INFO)
 
-
 # Define constants
-GRID_RESOLUTION = 0.1
-X_MIN, X_MAX = 0.0, 4.0
-Y_MIN, Y_MAX = 0.0, 4.0
-GRID_WIDTH = int((X_MAX - X_MIN) / GRID_RESOLUTION)
-GRID_HEIGHT = int((Y_MAX - Y_MIN) / GRID_RESOLUTION)
-PARETO_RADIUS = 0.35
-DEFAULT_STEP_SIZE = 0.2
+GRID_WIDTH = 100
+GRID_HEIGHT = 100
+PARETO_RADIUS = 10
+DEFAULT_STEP_SIZE = 7.5
 PROBABILITY_THRESHOLD = 0.01
 
 # ----------------------- #
@@ -46,6 +42,7 @@ class Tree:
         if node.parent is None:
         # This is the root node
             root_path = Path()
+            self.path_count += 1
             root_path.add_node(node)
             self.paths.append(root_path)
         elif not multiple_children and node.parent.path is not None:
@@ -54,6 +51,7 @@ class Tree:
         else:
             # Fork: create a new path
             new_path = Path()
+            self.path_count += 1
             current = node.parent
             while current:
                 new_path.nodes.insert(0, current)
@@ -86,6 +84,16 @@ class Tree:
         # Log the removal for debugging
         logging.info(f"Removed orphaned node: x={node.x}, y={node.y}, theta={node.theta}")
 
+    def finalize_path(self, goal_node):
+        path = Path()
+        current = goal_node
+        while current:
+            path.nodes.insert(0, current)
+            current = current.parent
+        self.paths.append(path)
+        self.path_count += 1
+
+
     def nearest(self, rand_node):
         """
         Find the nearest node in the tree to a random node, excluding the goal node.
@@ -93,14 +101,15 @@ class Tree:
         all_nodes = [node for path in self.paths for node in path.nodes]
         return min(all_nodes, key=lambda n: distance_to(n, rand_node))
     
-    def rewire(self, znear, new_node, grid, lc, edge_segments):
+    def rewire(self, znear, new_node, grid, lc=None, edge_segments=None):
         """
         Rewire the tree to optimize paths based on cost and failure probability.
         """
+        znear = [z for z in znear if distance_to(z, new_node) <= DEFAULT_STEP_SIZE]
+        
         for neighbor in znear:
-            #compute what cost + p_fail would be if we attached via new_node
-            xi = int((neighbor.x - X_MIN)/GRID_RESOLUTION)
-            yi = int((neighbor.y - Y_MIN)/GRID_RESOLUTION)
+            xi = int(neighbor.x / GRID_WIDTH * (grid.shape[0] - 1))
+            yi = int(neighbor.y / GRID_HEIGHT * (grid.shape[1] - 1))
             raw_p = grid[xi, yi]
             if raw_p <= 0.0:
                 # no risk here → no change to log-survival
@@ -119,8 +128,12 @@ class Tree:
                 old_parent = neighbor.parent
                 if old_parent:
                     # Remove the old edge from the plot
-                    update_progress_plot_3d(lc, edge_segments, old_parent, neighbor, remove=True)
+                    # update_progress_plot_3d(lc, edge_segments, old_parent, neighbor, remove=True)
                     old_parent.children.remove(neighbor)
+                    
+                # for child in neighbor.children[:]:
+                #     # Remove the edge from the plot
+                #     update_progress_plot_3d(lc, edge_segments, neighbor, child, remove=True)
 
                 for path in self.paths:
                     if neighbor in path.nodes:
@@ -143,7 +156,7 @@ class Tree:
                         break
 
                 # Add the new edge to the plot
-                update_progress_plot_3d(lc, edge_segments, new_node, neighbor)
+                # update_progress_plot_3d(lc, edge_segments, new_node, neighbor)
 
 
                 # propagate down the subtree
@@ -168,17 +181,12 @@ class Tree:
         while queue:
             node = queue.pop(0)
             for child in node.children:
-                # Store old edge for removal
-                if lc is not None and edge_segments is not None:
-                    # Remove the old edge before updating values
-                    update_progress_plot_3d(lc, edge_segments, node, child, remove=True)
-
                 # 1) cost
                 child.cost = node.cost + distance_to(node, child)
 
                 # 2) risk in child's cell
-                xi = int((child.x - X_MIN) / GRID_RESOLUTION)
-                yi = int((child.y - Y_MIN) / GRID_RESOLUTION)
+                xi = int(child.x / GRID_WIDTH * (grid.shape[0] - 1))
+                yi = int(child.y / GRID_HEIGHT * (grid.shape[1] - 1))
                 raw_p = grid[xi, yi]
                 if raw_p <= 0.0:
                     log_s_step = 0.0
@@ -197,9 +205,10 @@ class Tree:
                 if child.parent is node:
                     queue.append(child)
 
-                # Draw the new edge with updated p_fail
-                if lc is not None and edge_segments is not None:
-                    update_progress_plot_3d(lc, edge_segments, node, child)
+                # # Draw the new edge with updated p_fail
+                # if lc is not None and edge_segments is not None:
+                #     update_progress_plot_3d(lc, edge_segments, node, child)
+        # redraw_tree(self, lc, edge_segments)
 
     def neighbors(self, node):
         """
@@ -229,11 +238,13 @@ class Tree:
         one for *each* neighbor in Znear that yields a Pareto‐optimal (cost, p_fail)
         pair at the same (x,y,theta).
         """
+        test_node = Node(x, y, theta)
+        znear = [z for z in znear if distance_to(z, test_node) <= DEFAULT_STEP_SIZE]
+        
         # 1) gather all candidate (parent, cost, log_survival, p_fail)
         new_node_candidates = []
-        # step‐failure from grid cell
-        xi = int((x - X_MIN)/GRID_RESOLUTION)
-        yi = int((y - Y_MIN)/GRID_RESOLUTION)
+        xi = int(x / GRID_WIDTH * (grid.shape[0] - 1))
+        yi = int(y / GRID_HEIGHT * (grid.shape[1] - 1))
         raw_p = grid[xi, yi]
         if raw_p <= 0.0:
             # no risk here → no change to log-survival
@@ -281,9 +292,10 @@ class Tree:
     def get_path_to(self, goal_node):
         """
         Get the path from the start node to the goal node.
+        Only returns a path if it starts at the root and ends at the specified goal_node.
         """
         for path in self.paths:
-            if goal_node in path.nodes:
+            if path.nodes and path.nodes[0].parent is None and path.nodes[-1] is goal_node:
                 return path
         return None
 
@@ -300,7 +312,7 @@ class Path:
     def add_node(self, node):
         self.nodes.append(node)
         node.path = self  # Set the path reference for the node
-
+    
     @property
     def cost(self) -> float:
         # cost‐to‐come of the last node
@@ -310,7 +322,15 @@ class Path:
     def p_fail(self) -> float:
         # failure probability at the last node
         return self.nodes[-1].p_fail if self.nodes else 1.0
-
+    
+    @property
+    def is_complete(self) -> bool:
+        """
+        Check if the path is complete, i.e., it starts at the root and ends at a goal node.
+        """
+        return self.nodes and self.nodes[0].is_start and self.nodes[-1].is_goal and \
+               sum(1 for n in self.nodes if n.is_goal) == 1
+    
     def __repr__(self):
         return f"Path(len={len(self.nodes)}, cost={self.cost:.2f}, p_fail={self.p_fail:.2f})"
 
@@ -340,6 +360,7 @@ class Node:
         self.added_to_tree = False
         self.path = None  # Reference to the path this node belongs to
         self.is_goal = False  # Flag to indicate if this node is the goal node
+        self.is_start = False  # Flag to indicate if this node is the start node
 
 # --------------- Node Class --------------- #
 
@@ -358,11 +379,6 @@ class Grid:
         self.width = width
         self.height = height
         self.grid = np.zeros((width, height))
-        self.resolution = GRID_RESOLUTION
-        self.x_min = 0
-        self.x_max = width
-        self.y_min = 0
-        self.y_max = height
         self.obstacles = obstacles
 
         # Process all obstacles
@@ -384,8 +400,10 @@ class Grid:
         """
         Add a circular obstacle to the grid, prioritizing the highest probability.
         """
-        cx, cy = int((center[0] - self.x_min) / self.resolution), int((center[1] - self.y_min) / self.resolution)
-        rad_cells, safe_cells = int(radius / self.resolution), int(safe_dist / self.resolution)
+        cx = int(center[0] / self.width * (self.width - 1))
+        cy = int(center[1] / self.height * (self.height - 1))
+        rad_cells = int(radius / self.width * (self.width - 1))
+        safe_cells = int(safe_dist / self.width * (self.width - 1))
 
         for x in range(cx - rad_cells - safe_cells, cx + rad_cells + safe_cells + 1):
             for y in range(cy - rad_cells - safe_cells, cy + rad_cells + safe_cells + 1):
@@ -405,13 +423,15 @@ class Grid:
         """
         Add a rectangular unknown area to the grid, prioritizing the highest probability.
         """
-        x_start, x_end = int((x_range[0] - self.x_min) / self.resolution), int((x_range[1] - self.x_min) / self.resolution)
-        y_start, y_end = int((y_range[0] - self.y_min) / self.resolution), int((y_range[1] - self.y_min) / self.resolution)
+        x_start = int(x_range[0] / self.width * (self.width - 1))
+        x_end = int(x_range[1] / self.width * (self.width - 1))
+        y_start = int(y_range[0] / self.height * (self.height - 1))
+        y_end = int(y_range[1] / self.height * (self.height - 1))
 
         for x in range(x_start, x_end + 1):
             for y in range(y_start, y_end + 1):
-                # Update the grid only if the new probability is higher
-                self.grid[x][y] = max(self.grid[x][y], probability)
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    self.grid[x][y] = max(self.grid[x][y], probability)
 
 # --------------- Grid Class --------------- #
 
@@ -425,26 +445,30 @@ class Grid:
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size=DEFAULT_STEP_SIZE, threshold=PROBABILITY_THRESHOLD):
+def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=4500, step_size=DEFAULT_STEP_SIZE, threshold=PROBABILITY_THRESHOLD):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
     tree.add_node(start_node)
     goal_node.is_goal = True
+    start_node.is_start = True
     multiple_paths = []
 
     fig, ax, lc, edge_segments = init_progress_plot_3d(
     start,
     goal,
-    x_lim=(grid.x_min, grid.x_max),
-    y_lim=(grid.y_min, grid.y_max),
+    x_lim=(0, grid.width),
+    y_lim=(0, grid.height),
     obstacles=grid.obstacles,
     )   
 
     
     for current_iter in range(max_iter):
+        if current_iter % 1000 == 0:
+            # Update the plot every 1000 iterations
+            redraw_tree(tree, lc, edge_segments)
         # Random node sample
-        rand_node = Node(np.random.uniform(X_MIN, X_MAX), np.random.uniform(Y_MIN, Y_MAX), np.random.uniform(-np.pi, np.pi))
+        rand_node = Node(np.random.uniform(0, grid.width), np.random.uniform(0, grid.height), np.random.uniform(-np.pi, np.pi))
         if is_collision_free(rand_node, grid):  
             # Find the nearest node in the tree and steer to new node from it
             nearest_node = tree.nearest(rand_node)
@@ -471,64 +495,71 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
                         new_node.y, 
                         new_node.theta, 
                         grid.grid
-                    )
-
-                                    
+                    )   
+                    
                 if len(new_nodes) > 1:
-                    # multiple possible parents, 
+                    # multiple possible parents 
                     for nn in new_nodes:
                         multiple_children = True if len(nn.parent.children) > 1 else False
                         # if len(nn.parent.children) > 10:
                         #     print(f"This is the parent: {nn.parent}")
                         #     print(f"Multiple children: {len(nn.parent.children)}")                        # 1) goal check per branch
                         if distance_to(nn, goal) < step_size:
+                            if not any(child.is_goal for child in nn.children): # Safeguard against adding multiple goal nodes
                             # connect to goal exactly once per branch
-                            goal_node.parent        = nn
-                            nn.children.append(goal_node)
-                            goal_node.cost          = nn.cost + distance_to(nn, goal_node)
-                            goal_node.log_survival  = nn.log_survival
-                            goal_node.p_fail        = 1 - np.exp(goal_node.log_survival)
+                                goal_instance = Node(goal[0], goal[1], goal[2])
+                                goal_instance.is_goal = True
+                                goal_instance.parent = nn
+                                nn.children.append(goal_instance)
+                                goal_instance.cost = nn.cost + distance_to(nn, goal_instance)
+                                goal_instance.log_survival = nn.log_survival
+                                goal_instance.p_fail = 1 - np.exp(goal_instance.log_survival)
+                                
+                                if not nn.added_to_tree: # safeguard against adding the same node multiple times
+                                    tree.add_node(nn, multiple_children=multiple_children)
+                                tree.finalize_path(goal_instance)
+                                print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}")
 
-                            tree.add_node(goal_node, multiple_children=multiple_children)
-                            tree.add_node(nn, multiple_children=multiple_children)
-                            print(f"Goal node added to tree with cost: {goal_node.cost}, p_fail: {goal_node.p_fail}")
-                            update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
-                            update_progress_plot_3d(lc, edge_segments, nn, goal_node)
-
-                            raw_path   = tree.get_path_to(goal_node)
-                            multiple_paths.append({
-                                "path": raw_path,
-                                "cost": raw_path.cost,
-                                "p_fail": raw_path.p_fail
-                            })                        
+                                # raw_path = tree.get_path_to(goal_instance)
+                                # if raw_path is not None:
+                                #     multiple_paths.append({
+                                #         "path": raw_path,
+                                #         "cost": raw_path.cost,
+                                #         "p_fail": raw_path.p_fail
+                                #     })
+                                # redraw_tree(tree, lc, edge_segments)
                         else:
                             tree.add_node(nn, multiple_children=multiple_children)
                             tree.rewire(tree.neighbors(nn), nn, grid.grid, lc, edge_segments)
-                            update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
+                            # update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
                 else:
                     # single child branch
                     for nn in new_nodes:
                         multiple_children = True if len(nn.parent.children) > 1 else False
                         if distance_to(nn, goal) < step_size:
-                            # ─── goal handling ─────────────────────────
-                            goal_node.parent        = nn
-                            nn.children.append(goal_node)
-                            goal_node.cost          = nn.cost + distance_to(nn, goal_node)
-                            goal_node.log_survival  = nn.log_survival
-                            goal_node.p_fail        = 1 - np.exp(goal_node.log_survival)
+                            if not any(child.is_goal for child in nn.children): # Safeguard against adding multiple goal nodes
+                                # ─── goal handling ─────────────────────────
+                                goal_instance = Node(goal[0], goal[1], goal[2])
+                                goal_instance.is_goal = True
+                                goal_instance.parent = nn
+                                nn.children.append(goal_instance)
+                                goal_instance.cost = nn.cost + distance_to(nn, goal_instance)
+                                goal_instance.log_survival = nn.log_survival
+                                goal_instance.p_fail = 1 - np.exp(goal_instance.log_survival)
 
-                            tree.add_node(nn, multiple_children=multiple_children)
-                            tree.add_node(goal_node, multiple_children=multiple_children)
-                            print(f"Goal node added to tree with cost: {goal_node.cost}, p_fail: {goal_node.p_fail}")
-                            update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
-                            update_progress_plot_3d(lc, edge_segments, nn, goal_node)
+                                if not nn.added_to_tree: # safeguard against adding the same node multiple times
+                                    tree.add_node(nn, multiple_children=multiple_children)
+                                tree.finalize_path(goal_instance)
+                                print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}, current_iter: {current_iter}")
 
-                            raw_path   = tree.get_path_to(goal_node)
-                            multiple_paths.append({
-                                "path": raw_path,
-                                "cost": raw_path.cost,
-                                "p_fail": raw_path.p_fail
-                            })
+                                # raw_path = tree.get_path_to(goal_instance)
+                                # if raw_path is not None:
+                                #     multiple_paths.append({
+                                #         "path": raw_path,
+                                #         "cost": raw_path.cost,
+                                #         "p_fail": raw_path.p_fail
+                                #     })
+                                # redraw_tree(tree, lc, edge_segments)
                         # 2) Not near goal, so add the new node to the tree
                         else:
                             # Add the new node to the tree
@@ -536,9 +567,54 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000, step_size
 
                             tree.add_node(nn, multiple_children=multiple_children)
                             tree.rewire(tree.neighbors(nn), nn, grid.grid, lc, edge_segments)
-                            update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
+                            # update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
 
-    return multiple_paths 
+    # Extract multiple paths from the tree
+    multiple_paths = [
+                        {
+                            "path": p,
+                            "cost": p.cost,
+                            "p_fail": p.p_fail
+                        }
+                        for p in tree.paths if p.is_complete
+                    ]
+    
+    
+    print("\n--- Debug: Paths from start to goal ---")
+    for idx, entry in enumerate(multiple_paths):
+        path = entry["path"]
+        if hasattr(path, "nodes"):
+            nodes = path.nodes
+        else:
+            nodes = path
+        print(f"Path {idx+1}:")
+        for node in nodes:
+            print(f"  (x={node.x:.2f}, y={node.y:.2f}, theta={node.theta:.2f}, cost={node.cost:.2f}, p_fail={node.p_fail:.4f})"
+            + (" [START]" if getattr(node, "is_start", False) else "")
+            + (" [GOAL]" if getattr(node, "is_goal", False) else ""))
+        print(f"Path {idx+1} ends at: (x={path.nodes[-1].x}, y={path.nodes[-1].y}) is_goal={getattr(path.nodes[-1], 'is_goal', False)}")
+        print("-" * 40)
+
+    # After collecting multiple_paths, filter out dominated paths using pareto_dominates
+
+    def pareto_filter(paths):
+        non_dominated = []
+        for i, entry_i in enumerate(paths):
+            dominated = False
+            for j, entry_j in enumerate(paths):
+                if i != j:
+                    # If entry_j dominates entry_i, mark as dominated
+                    if (entry_j["cost"] <= entry_i["cost"] and entry_j["p_fail"] < entry_i["p_fail"]) or \
+                    (entry_j["cost"] < entry_i["cost"] and entry_j["p_fail"] <= entry_i["p_fail"]):
+                        dominated = True
+                        break
+            if not dominated:
+                non_dominated.append(entry_i)
+        return non_dominated
+
+    filtered_paths = pareto_filter(multiple_paths)
+
+    return filtered_paths, multiple_paths 
 
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
@@ -555,14 +631,14 @@ def main():
     obstacles = []
 
     
-    start, goal = (0.3, 2, 0), (3.5, 0.5, 0)
+    start, goal = (10, 70, 0), (75, 5, 0)
 
     # Obstacle dictionary
     obstacles = [
-        {"type": "circular", "center": (2.0, 4), "radius": 0.4, "safe_dist": 0.2},
-        {"type": "circular", "center": (2.0, 2), "radius": 0.4, "safe_dist": 0.2},
-        {"type": "circular", "center": (2.0, 0), "radius": 0.4, "safe_dist": 0.2},
-        {"type": "rectangular", "x_range": (1.5, 2.5), "y_range": (0.3, 1.7), "probability": 0.05}
+        # {"type": "circular", "center": (50, 80), "radius": 10, "safe_dist": 5},
+        {"type": "rectangular", "x_range": (15, 45), "y_range": (10, 40), "probability": 0.05},
+        {"type": "rectangular", "x_range": (50, 70), "y_range": (45, 60), "probability": 0.05},
+        {"type": "circular", "center": (60, 30), "radius": 10, "safe_dist": 5},
     ]
 
     
@@ -574,9 +650,11 @@ def main():
 
     grid = Grid(GRID_WIDTH, GRID_HEIGHT, obstacles)
 
-    multiple_paths = PO_RRT_Star(start, goal, grid, failure_prob_values)
-    plot_paths_metrics(multiple_paths)
-
+    filtered_paths, multiple_paths = PO_RRT_Star(start, goal, grid, failure_prob_values)
+    # plot_paths_metrics(multiple_paths)
+    # plot_full_paths(multiple_paths)
+    plot_paths_summary(filtered_paths, obstacles=obstacles)
+    plot_paths_summary(multiple_paths, obstacles=obstacles)
     
 
 if __name__ == '__main__':
