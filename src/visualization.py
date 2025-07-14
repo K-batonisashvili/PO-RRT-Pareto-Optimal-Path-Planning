@@ -143,7 +143,7 @@ def plot_paths_summary(paths, obstacles=None):
     Optionally plots obstacles on the right plot if obstacles is provided.
     """
     # Sort by cost and select top 10
-    top_paths = sorted(paths, key=lambda entry: entry["cost"])[:10] if len(paths) > 10 else paths
+    top_paths = paths
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
@@ -160,7 +160,7 @@ def plot_paths_summary(paths, obstacles=None):
     ax1.set_ylabel('Failure Probability')
     ax1.set_title('Cost vs. Failure Probability (Top 10)')
     ax1.grid(True)
-    ax1.legend()
+    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 
     # --- Right: Plot Obstacles if provided ---
     if obstacles is not None:
@@ -193,7 +193,7 @@ def plot_paths_summary(paths, obstacles=None):
     ax2.set_ylabel('Y')
     ax2.set_title('Full Paths from Start to Goal (Top 10)')
     ax2.grid(True)
-    ax2.legend()
+    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 
     plt.tight_layout()
     plt.show(block=True)
@@ -228,7 +228,7 @@ def redraw_tree(tree, lc, edge_segments):
 
     # Combine all segments for drawing
     all_segments = new_segments + [seg for seg, color in edge_segments]
-    colors = ['black'] * len(new_segments) + [color for seg, color in edge_segments]
+    colors = ['gray'] * len(new_segments) + [color for seg, color in edge_segments]
 
     lc.set_segments(all_segments)
     lc.set_color(colors)
