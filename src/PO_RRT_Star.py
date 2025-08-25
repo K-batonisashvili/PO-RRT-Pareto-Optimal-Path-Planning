@@ -31,6 +31,7 @@ class Tree:
         self.paths = []
         self.node_list = []
         self.rewire_counts = 0
+        self.additional_rewire_nodes = 0  # Additional rewire nodes        
         self.rewire_neighbors_count = 0
         self.grid = grid
         self.node_count = 0 # Debugger
@@ -227,63 +228,82 @@ class Tree:
     def rewire(self, znear, nn, grid, lc=None, edge_segments=None):
         """
         Rewire the tree to optimize paths based on cost and failure probability.
+        Now allows all non-dominated (Pareto-optimal) rewires, not just strictly dominating ones.
         """
         znear = [z for z in znear if distance_to(z, nn) <= DEFAULT_STEP_SIZE]
-        
+        # 1) Gather all candidate rewires
+        rewire_candidates = []
         for z in znear:
-            # Check if the new node is too far from the neighbor
-            if distance_to(nn, z) > DEFAULT_STEP_SIZE + 1e-3:
-                print(f" [rewire] Illegal rewire: distance = {distance_to(nn, z):.2f} "
-                                f"from ({nn.x:.2f}, {nn.y:.2f}) to ({z.x:.2f}, {z.y:.2f})")
-
-            log_s_step = accumulate_log_survival(nn, z, grid)
-            new_log_survival = nn.log_survival + log_s_step
-            new_cost = nn.cost + distance_to(nn, z)            
-            new_p_fail     = 1 - np.exp(new_log_survival)
-
             if z is nn or nn in z.children:
                 continue  # skip self-loop or cycle
+            if distance_to(nn, z) > DEFAULT_STEP_SIZE + 1e-3:
+                print(f" [rewire] Illegal rewire: distance = {distance_to(nn, z):.2f} "
+                      f"from ({nn.x:.2f}, {nn.y:.2f}) to ({z.x:.2f}, {z.y:.2f})")
+            log_s_step = accumulate_log_survival(nn, z, grid)
+            new_log_survival = nn.log_survival + log_s_step
+            new_cost = nn.cost + distance_to(nn, z)
+            new_p_fail = 1 - np.exp(new_log_survival)
+            rewire_candidates.append((z, new_cost, new_log_survival, new_p_fail))
 
-            # only rewire if (new_cost,new_p_fail) Pareto-dominates (old_cost,old_p_fail)
-            if self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail):
-                # detach neighbor from old parent and old path
+        # 2) Pareto filter the candidates
+        pareto_rewires = []
+        for ca in rewire_candidates:
+            dominated = False
+            for cb in rewire_candidates:
+                if (ca is not cb) and self.pareto_dominates(cb[1], cb[3], ca[1], ca[3]):
+                    dominated = True
+                    break
+            if not dominated:
+                pareto_rewires.append(ca)
+
+        # 3) For each non-dominated candidate, perform the rewire
+        for z, new_cost, new_log_survival, new_p_fail in pareto_rewires:
+            # Check if this is a strictly dominant rewire
+            strictly_dominant = self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail) and \
+                                not self.pareto_dominates(z.cost, z.p_fail, new_cost, new_p_fail)
+
+            if strictly_dominant:
+                # Detach neighbor from old parent and old path
                 old_parent = z.parent
                 if old_parent:
-                    # Remove the old edge from the plot
-                    # update_progress_plot_3d(lc, edge_segments, old_parent, neighbor, remove=True)
-                    old_parent.children.remove(z)
+                    if z in old_parent.children:
+                        old_parent.children.remove(z)
                     z.parent = None
-                    
-                # for child in neighbor.children[:]:
-                #     # Remove the edge from the plot
-                #     update_progress_plot_3d(lc, edge_segments, neighbor, child, remove=True)
 
                 for path in self.paths:
                     if z in path.nodes:
                         path.nodes.remove(z)
                         break
 
-                # attach neighbor under new_node
+                # Attach neighbor under new_node
                 z.parent = nn
                 nn.children.append(z)
 
-                # update the neighbor’s metrics
-                z.cost       = new_cost
+                # Update the neighbor’s metrics
+                z.cost = new_cost
                 z.log_survival = new_log_survival
-                z.p_fail     = new_p_fail
+                z.p_fail = new_p_fail
 
-                # add neighbor into the same Path object as new_node
+                # Add neighbor into the same Path object as new_node
                 z.path = nn.path
                 nn.path.add_node(z)
 
-
-                # Add the new edge to the plot
-                # update_progress_plot_3d(lc, edge_segments, new_node, neighbor)
-
-
-                # propagate down the subtree
+                # Propagate down the subtree
                 self.propagate_cost(z, grid, lc, edge_segments)
-
+                self.rewire_counts += 1
+            else:
+                # Non-dominated but not strictly dominant: create a new node/branch
+                new_z = Node(z.x, z.y, z.theta)
+                new_z.parent = nn
+                nn.children.append(new_z)
+                new_z.cost = new_cost
+                new_z.log_survival = new_log_survival
+                new_z.p_fail = new_p_fail
+                new_z.path = nn.path
+                self.add_node(new_z, multiple_children=True) 
+                new_z.is_additional_rewire = True  # <-- Tag for tracking
+                self.node_list.append(new_z)
+                self.propagate_cost(new_z, grid, lc, edge_segments)
                 self.rewire_counts += 1
 
     def propagate_cost(self, root, grid, lc=None, edge_segments=None):
@@ -385,6 +405,7 @@ class Node:
         self.path = None  # Reference to the path this node belongs to
         self.is_goal = False  # Flag to indicate if this node is the goal node
         self.is_start = False  # Flag to indicate if this node is the start node
+        self.is_additional_rewire = False  # Flag for additional rewire nodes
 
 # --------------- Node Class --------------- #
 
@@ -469,7 +490,7 @@ class Grid:
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=3000):
+def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2850):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
@@ -665,6 +686,9 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=3000):
             # Normal print
             print(f"  (x={b.x:.2f}, y={b.y:.2f}, theta={b.theta:.2f}, cost={b.cost:.2f}, p_fail={b.p_fail:.4f})" +
                 (" [GOAL]" if getattr(b, "is_goal", False) else ""))
+            
+    num_additional_in_tree = sum(1 for n in tree.node_list if getattr(n, "is_additional_rewire", False))
+    print(f"\nAdditional rewire nodes currently in tree: {num_additional_in_tree}")
     # print("\n--- Debug: Paths from start to goal ---")
     # for idx, entry in enumerate(multiple_paths):
     #     path = entry["path"]
@@ -731,19 +755,19 @@ def main():
     ]
 
     
-    failure_prob_values = simpledialog.askstring("Input", "Enter the failure probabilities (comma-separated):")
-    if failure_prob_values:
-        failure_prob_values = [float(x.strip()) for x in failure_prob_values.split(',')]
-    else:
-        failure_prob_values = [0.1, 0.2, 0.3]  # Default values if none provided
+    # failure_prob_values = simpledialog.askstring("Input", "Enter the failure probabilities (comma-separated):")
+    # if failure_prob_values:
+    #     failure_prob_values = [float(x.strip()) for x in failure_prob_values.split(',')]
+    # else:
+    #     failure_prob_values = [0.1, 0.2, 0.3]  # Default values if none provided
 
     grid = Grid(GRID_WIDTH, GRID_HEIGHT, obstacles)
 
-    filtered_paths, multiple_paths = PO_RRT_Star(start, goal, grid, failure_prob_values)
+    filtered_paths, multiple_paths = PO_RRT_Star(start, goal, grid, failure_prob_values=[0.1])
     # plot_paths_metrics(multiple_paths)
     # plot_full_paths(multiple_paths)
-    plot_paths_summary(filtered_paths, obstacles=obstacles)
-    plot_paths_summary(multiple_paths, obstacles=obstacles)
+    # plot_paths_summary(filtered_paths, obstacles=obstacles)
+    # plot_paths_summary(multiple_paths, obstacles=obstacles)
     
 
 if __name__ == '__main__':

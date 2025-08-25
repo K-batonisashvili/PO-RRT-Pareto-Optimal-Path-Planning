@@ -142,8 +142,8 @@ def plot_paths_summary(paths, obstacles=None):
     Each path is given a unique color in both plots.
     Optionally plots obstacles on the right plot if obstacles is provided.
     """
-    # Sort by cost and select top 10
-    top_paths = paths
+    # Sort by p_fail (increasing)
+    top_paths = sorted(paths, key=lambda entry: entry["p_fail"])[:10]
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
@@ -187,7 +187,7 @@ def plot_paths_summary(paths, obstacles=None):
         xs = [node.x for node in nodes]
         ys = [node.y for node in nodes]
         ax2.plot(xs, ys, marker='o', color=colors(idx),
-                 label=f'Path {idx+1}\n(cost={entry["cost"]:.2f}, p_fail={entry["p_fail"]:.3f})')
+                 label=f'Path {idx+1}\n(cost={entry["cost"]:.6f}, p_fail={entry["p_fail"]:.6f})')
         ax2.scatter(xs[0], ys[0], c='green', s=50, label='Start' if idx == 0 else "")
         ax2.scatter(xs[-1], ys[-1], c='blue', s=50, label='Goal' if idx == 0 else "")
     ax2.set_xlabel('X')
