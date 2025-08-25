@@ -160,7 +160,8 @@ def plot_paths_summary(paths, obstacles=None):
     ax1.set_ylabel('Failure Probability')
     ax1.set_title('Cost vs. Failure Probability (Top 10)')
     ax1.grid(True)
-    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+    ncol = min(2, len(top_paths))  # Use up to 3 columns, or fewer if less paths
+    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
 
     # --- Right: Plot Obstacles if provided ---
     if obstacles is not None:
@@ -193,7 +194,7 @@ def plot_paths_summary(paths, obstacles=None):
     ax2.set_ylabel('Y')
     ax2.set_title('Full Paths from Start to Goal (Top 10)')
     ax2.grid(True)
-    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
 
     plt.tight_layout()
     plt.show(block=True)

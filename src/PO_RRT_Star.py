@@ -11,8 +11,8 @@ logging.basicConfig(level=logging.INFO)
 # Define constants
 GRID_WIDTH = 100
 GRID_HEIGHT = 100
-PARETO_RADIUS = 6
-DEFAULT_STEP_SIZE = 6
+PARETO_RADIUS = 7
+DEFAULT_STEP_SIZE = 7
 PROBABILITY_THRESHOLD = 0.01
 
 # ----------------------- #
@@ -45,7 +45,7 @@ class Tree:
         if node.parent is not None:
             d = distance_to(node, node.parent)
             if d > DEFAULT_STEP_SIZE + 1e-3:
-                print(f"❌ [add_node] Illegal jump: {d:.2f} from parent at ({node.parent.x:.2f}, {node.parent.y:.2f}) "
+                print(f" [add_node] Illegal jump: {d:.2f} from parent at ({node.parent.x:.2f}, {node.parent.y:.2f}) "
                                 f"to child at ({node.x:.2f}, {node.y:.2f})")
         if node not in self.node_list:
             self.node_list.append(node)
@@ -58,6 +58,7 @@ class Tree:
         elif not multiple_children and node.parent.path is not None:
             # Continue on the parent's path
             node.parent.path.add_node(node)
+            node.added_to_tree = True
         else:
             # Fork: create a new path
             new_path = Path()
@@ -131,102 +132,14 @@ class Tree:
         _, idx = kdtree.query([rand_node.x, rand_node.y], k=1)
         return self.node_list[idx]
     
-    def rewire(self, znear, new_node, grid, lc=None, edge_segments=None):
-        """
-        Rewire the tree to optimize paths based on cost and failure probability.
-        """
-        znear = [z for z in znear if distance_to(z, new_node) <= DEFAULT_STEP_SIZE]
-        
-        for z in znear:
-            # Check if the new node is too far from the neighbor
-            if distance_to(new_node, z) > DEFAULT_STEP_SIZE + 1e-3:
-                print(f"❌ [rewire] Illegal rewire: distance = {distance_to(new_node, z):.2f} "
-                                f"from ({new_node.x:.2f}, {new_node.y:.2f}) to ({z.x:.2f}, {z.y:.2f})")
-
-            log_s_step = accumulate_log_survival(new_node, z, grid)
-            new_log_survival = new_node.log_survival + log_s_step
-
-            new_cost = new_node.cost + distance_to(new_node, z)            
-            new_p_fail     = 1 - np.exp(new_log_survival)
-
-            if z is new_node or new_node in z.children:
-                continue  # skip self-loop or cycle
-
-            # only rewire if (new_cost,new_p_fail) Pareto-dominates (old_cost,old_p_fail)
-            if self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail):
-                # detach neighbor from old parent and old path
-                old_parent = z.parent
-                if old_parent:
-                    # Remove the old edge from the plot
-                    # update_progress_plot_3d(lc, edge_segments, old_parent, neighbor, remove=True)
-                    old_parent.children.remove(z)
-                    
-                # for child in neighbor.children[:]:
-                #     # Remove the edge from the plot
-                #     update_progress_plot_3d(lc, edge_segments, neighbor, child, remove=True)
-
-                for path in self.paths:
-                    if z in path.nodes:
-                        path.nodes.remove(z)
-                        break
-
-                # attach neighbor under new_node
-                z.parent = new_node
-                new_node.children.append(z)
-
-                # update the neighbor’s metrics
-                z.cost       = new_cost
-                z.log_survival = new_log_survival
-                z.p_fail     = new_p_fail
-
-                # add neighbor into the same Path object as new_node
-                z.path = new_node.path
-                new_node.path.add_node(z)
-
-
-                # Add the new edge to the plot
-                # update_progress_plot_3d(lc, edge_segments, new_node, neighbor)
-
-
-                # propagate down the subtree
-                self.propagate_cost(z, grid, lc, edge_segments)
-
-                self.rewire_counts += 1
-
+    
     def pareto_dominates(self, cost1, fail1, cost2, fail2):
         """
         Check if node1 dominates node2 in terms of cost and failure probability.
         """
         return (cost1 <= cost2 and fail1 < fail2) or \
         (cost1 < cost2 and fail1  <= fail2)
-
-    def propagate_cost(self, root, grid, lc=None, edge_segments=None):
-        """
-        Iteratively propagate cost & failure updates down the
-        subtree of .children under `root`, avoiding recursion.
-        """
-        queue = [root]
-        new_path = root.path
-        while queue:
-            node = queue.pop(0)
-            for child in node.children:
-
-                new_cost = node.cost + distance_to(node, child)
-                log_s_step = accumulate_log_survival(node, child, grid)
-                new_log_survival = node.log_survival + log_s_step
-                new_p_fail = 1 - np.exp(new_log_survival)
-
-                if self.pareto_dominates(new_cost, new_p_fail, child.cost, child.p_fail):
-                    child.cost = new_cost
-                    child.log_survival = new_log_survival
-                    child.p_fail = new_p_fail
-                    child.path = new_path
-                    queue.append(child)  # only propagate forward
-
-                # # Draw the new edge with updated p_fail
-                # if lc is not None and edge_segments is not None:
-                #     update_progress_plot_3d(lc, edge_segments, node, child)
-
+    
     def neighbors(self, node):
         """
         Efficiently find all unique nodes within PARETO_RADIUS using cKDTree.
@@ -253,7 +166,7 @@ class Tree:
                 seen.add(node_signature)
 
         return neighbors
-
+    
     def choose_parents(self, znear, x, y, theta, grid):
         """
         Instead of picking a single best parent, return a list of new Node()s—
@@ -289,7 +202,7 @@ class Tree:
         for potential_parent, cost, log_surv, p_fail in pareto_dominant_nodes:
             # Check if the potential parent is too far from the new node
             if distance_to(potential_parent, Node(x, y, theta)) > DEFAULT_STEP_SIZE + 1e-3:
-                print(f"❌ [choose_parents] Illegal parent assignment: jump from "
+                print(f" [choose_parents] Illegal parent assignment: jump from "
                                 f"({potential_parent.x:.2f}, {potential_parent.y:.2f}) → ({x:.2f}, {y:.2f})")
 
             new_node = Node(x, y, theta)
@@ -299,13 +212,106 @@ class Tree:
             new_node.log_survival   = log_surv
             new_node.p_fail         = p_fail
             final_pareto_nodes.append(new_node)
-
-        if len(final_pareto_nodes) > 8:
-            logging.info(f"Found {len(final_pareto_nodes)} Pareto‐optimal nodes.")
-            for node in final_pareto_nodes:
-                logging.info(f"Node: {node}, Cost: {node.cost}, p_fail: {node.p_fail}")
+            # --- DEBUG: Check p_fail monotonicity ---
+            if new_node.parent and new_node.p_fail < new_node.parent.p_fail - 1e-8:
+                print(f"DEBUG BREAK: p_fail decreased from parent to child during node creation!")
+                print(f"  Parent p_fail: {new_node.parent.p_fail:.6f}, Child p_fail: {new_node.p_fail:.6f}")
+                import pdb; pdb.set_trace()  # <-- This is a breakpoint for debugging
+        # if len(final_pareto_nodes) > 8:
+        #     logging.info(f"Found {len(final_pareto_nodes)} Pareto‐optimal nodes.")
+        #     for node in final_pareto_nodes:
+        #         logging.info(f"Node: {node}, Cost: {node.cost}, p_fail: {node.p_fail}")
 
         return final_pareto_nodes
+    
+    def rewire(self, znear, nn, grid, lc=None, edge_segments=None):
+        """
+        Rewire the tree to optimize paths based on cost and failure probability.
+        """
+        znear = [z for z in znear if distance_to(z, nn) <= DEFAULT_STEP_SIZE]
+        
+        for z in znear:
+            # Check if the new node is too far from the neighbor
+            if distance_to(nn, z) > DEFAULT_STEP_SIZE + 1e-3:
+                print(f" [rewire] Illegal rewire: distance = {distance_to(nn, z):.2f} "
+                                f"from ({nn.x:.2f}, {nn.y:.2f}) to ({z.x:.2f}, {z.y:.2f})")
+
+            log_s_step = accumulate_log_survival(nn, z, grid)
+            new_log_survival = nn.log_survival + log_s_step
+            new_cost = nn.cost + distance_to(nn, z)            
+            new_p_fail     = 1 - np.exp(new_log_survival)
+
+            if z is nn or nn in z.children:
+                continue  # skip self-loop or cycle
+
+            # only rewire if (new_cost,new_p_fail) Pareto-dominates (old_cost,old_p_fail)
+            if self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail):
+                # detach neighbor from old parent and old path
+                old_parent = z.parent
+                if old_parent:
+                    # Remove the old edge from the plot
+                    # update_progress_plot_3d(lc, edge_segments, old_parent, neighbor, remove=True)
+                    old_parent.children.remove(z)
+                    z.parent = None
+                    
+                # for child in neighbor.children[:]:
+                #     # Remove the edge from the plot
+                #     update_progress_plot_3d(lc, edge_segments, neighbor, child, remove=True)
+
+                for path in self.paths:
+                    if z in path.nodes:
+                        path.nodes.remove(z)
+                        break
+
+                # attach neighbor under new_node
+                z.parent = nn
+                nn.children.append(z)
+
+                # update the neighbor’s metrics
+                z.cost       = new_cost
+                z.log_survival = new_log_survival
+                z.p_fail     = new_p_fail
+
+                # add neighbor into the same Path object as new_node
+                z.path = nn.path
+                nn.path.add_node(z)
+
+
+                # Add the new edge to the plot
+                # update_progress_plot_3d(lc, edge_segments, new_node, neighbor)
+
+
+                # propagate down the subtree
+                self.propagate_cost(z, grid, lc, edge_segments)
+
+                self.rewire_counts += 1
+
+    def propagate_cost(self, root, grid, lc=None, edge_segments=None):
+        """
+        Iteratively propagate cost & failure updates down the
+        subtree of .children under `root`, avoiding recursion.
+        """
+        queue = [root]
+        new_path = root.path
+        while queue:
+            node = queue.pop(0)
+            for child in node.children:
+
+                new_cost = node.cost + distance_to(node, child)
+                log_s_step = accumulate_log_survival(node, child, grid)
+                new_log_survival = node.log_survival + log_s_step
+                new_p_fail = 1 - np.exp(new_log_survival)
+
+                
+                child.cost = new_cost
+                child.log_survival = new_log_survival
+                child.p_fail = new_p_fail
+                child.path = new_path
+                queue.append(child)  # only propagate forward
+
+                # # Draw the new edge with updated p_fail
+                # if lc is not None and edge_segments is not None:
+                #     update_progress_plot_3d(lc, edge_segments, node, child)
 
     def get_path_to(self, goal_node):
         """
@@ -463,7 +469,7 @@ class Grid:
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
+def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=3000):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
@@ -518,9 +524,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
                     # multiple possible parents 
                     for nn in new_nodes:
                         multiple_children = True if len(nn.parent.children) > 1 else False
-                        # if len(nn.parent.children) > 10:
-                        #     print(f"This is the parent: {nn.parent}")
-                        #     print(f"Multiple children: {len(nn.parent.children)}")                        # 1) goal check per branch
+                        # 1) goal check per branch
                         if distance_to(nn, goal) <= DEFAULT_STEP_SIZE:
                             # if not any(child.is_goal for child in nn.children): # Safeguard against adding multiple goal nodes
                             # connect to goal exactly once per branch
@@ -552,7 +556,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
                                 # Add goal_instance to tree
                                 tree.add_node(goal_instance) 
                                 print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}")
-                                #redraw_tree(tree, lc, edge_segments)
+                                # redraw_tree(tree, lc, edge_segments)
                         else:
                             tree.add_node(nn, multiple_children=multiple_children)
                             tree.rewire(tree.neighbors(nn), nn, grid, lc, edge_segments)
@@ -594,7 +598,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
                                 tree.add_node(goal_instance) 
                                 print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}")
 
-                                #redraw_tree(tree, lc, edge_segments)
+                                # redraw_tree(tree, lc, edge_segments)
                         # 2) Not near goal, so add the new node to the tree
                         else:
                             # Add the new node to the tree
@@ -643,13 +647,20 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
             a, b = nodes[i], nodes[i+1]
             step_dist = distance_to(a, b)
 
-            # 🔴 DEBUG JUMP
+            # DEBUG JUMP
             if step_dist > MAX_ALLOWED_STEP:
-                print(f"⚠️  ILLEGAL JUMP DETECTED between nodes {i} and {i+1}:")
+                print(f"    ILLEGAL JUMP DETECTED between nodes {i} and {i+1}:")
                 print(f"    From: (x={a.x:.2f}, y={a.y:.2f})")
                 print(f"    To:   (x={b.x:.2f}, y={b.y:.2f})")
                 print(f"    Distance: {step_dist:.2f} > allowed {MAX_ALLOWED_STEP:.2f}")
                 print("Illegal jump in path — investigate tree structure or rewire logic.")
+
+            # DEBUG P_FAIL MONOTONICITY
+            if b.p_fail < a.p_fail - 1e-8:  # Allow for tiny floating point error
+                print(f"    WARNING: p_fail decreased from parent to child at nodes {i}->{i+1}:")
+                print(f"    Parent p_fail: {a.p_fail:.6f}, Child p_fail: {b.p_fail:.6f}")
+            elif a.p_fail < 0 or b.p_fail < 0:
+                print(f"    ERROR: Negative p_fail detected at node {i} or {i+1}.")
 
             # Normal print
             print(f"  (x={b.x:.2f}, y={b.y:.2f}, theta={b.theta:.2f}, cost={b.cost:.2f}, p_fail={b.p_fail:.4f})" +
@@ -714,7 +725,9 @@ def main():
         # {"type": "circular", "center": (50, 80), "radius": 10, "safe_dist": 5},
         {"type": "rectangular", "x_range": (15, 45), "y_range": (10, 40), "probability": 0.05},
         {"type": "rectangular", "x_range": (50, 70), "y_range": (45, 60), "probability": 0.05},
-        {"type": "circular", "center": (60, 30), "radius": 10, "safe_dist": 5},
+        {"type": "circular", "center": (10, 58), "radius": 8, "safe_dist": 5},
+        {"type": "circular", "center": (30, 60), "radius": 10, "safe_dist": 5},
+        {"type": "circular", "center": (60, 20), "radius": 18, "safe_dist": 5}
     ]
 
     
