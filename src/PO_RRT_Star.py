@@ -11,8 +11,8 @@ logging.basicConfig(level=logging.INFO)
 # Define constants
 GRID_WIDTH = 100
 GRID_HEIGHT = 100
-PARETO_RADIUS = 7
-DEFAULT_STEP_SIZE = 7
+PARETO_RADIUS = 8
+DEFAULT_STEP_SIZE = 8
 PROBABILITY_THRESHOLD = 0.01
 
 # ----------------------- #
@@ -259,8 +259,7 @@ class Tree:
         # 3) For each non-dominated candidate, perform the rewire
         for z, new_cost, new_log_survival, new_p_fail in pareto_rewires:
             # Check if this is a strictly dominant rewire
-            strictly_dominant = self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail) and \
-                                not self.pareto_dominates(z.cost, z.p_fail, new_cost, new_p_fail)
+            strictly_dominant = self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail)
 
             if strictly_dominant:
                 # Detach neighbor from old parent and old path
@@ -292,7 +291,7 @@ class Tree:
                 self.propagate_cost(z, grid, lc, edge_segments)
                 self.rewire_counts += 1
             else:
-                # Non-dominated but not strictly dominant: create a new node/branch
+                # Non-dominated but not strictly dominant = new node/branch
                 new_z = Node(z.x, z.y, z.theta)
                 new_z.parent = nn
                 nn.children.append(new_z)
@@ -301,15 +300,13 @@ class Tree:
                 new_z.p_fail = new_p_fail
                 new_z.path = nn.path
                 self.add_node(new_z, multiple_children=True) 
-                new_z.is_additional_rewire = True  # <-- Tag for tracking
-                self.node_list.append(new_z)
-                self.propagate_cost(new_z, grid, lc, edge_segments)
+                new_z.is_additional_rewire = True  # rewire tracking
+                # self.propagate_cost(new_z, grid, lc, edge_segments)
                 self.rewire_counts += 1
 
     def propagate_cost(self, root, grid, lc=None, edge_segments=None):
         """
-        Iteratively propagate cost & failure updates down the
-        subtree of .children under `root`, avoiding recursion.
+        Iteratively propagate cost & failure updates down the subtree.
         """
         queue = [root]
         new_path = root.path
@@ -490,7 +487,7 @@ class Grid:
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2850):
+def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
@@ -628,6 +625,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2850):
                             tree.add_node(nn, multiple_children=multiple_children)
                             tree.rewire(tree.neighbors(nn), nn, grid, lc, edge_segments)
                             # update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
+                # redraw_tree(tree, lc, edge_segments)
 
     # 1. Collect all goal nodes in the tree
     goal_nodes = []
@@ -654,7 +652,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2850):
     
     
     # Debugging output for paths
-    redraw_tree(tree, lc, edge_segments)
+    # redraw_tree(tree, lc, edge_segments)
 
     MAX_ALLOWED_STEP = DEFAULT_STEP_SIZE + 1e-3  # Small epsilon
 
@@ -668,13 +666,13 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2850):
             a, b = nodes[i], nodes[i+1]
             step_dist = distance_to(a, b)
 
-            # DEBUG JUMP
-            if step_dist > MAX_ALLOWED_STEP:
-                print(f"    ILLEGAL JUMP DETECTED between nodes {i} and {i+1}:")
-                print(f"    From: (x={a.x:.2f}, y={a.y:.2f})")
-                print(f"    To:   (x={b.x:.2f}, y={b.y:.2f})")
-                print(f"    Distance: {step_dist:.2f} > allowed {MAX_ALLOWED_STEP:.2f}")
-                print("Illegal jump in path — investigate tree structure or rewire logic.")
+            # # DEBUG JUMP
+            # if step_dist > MAX_ALLOWED_STEP:
+            #     print(f"    ILLEGAL JUMP DETECTED between nodes {i} and {i+1}:")
+            #     print(f"    From: (x={a.x:.2f}, y={a.y:.2f})")
+            #     print(f"    To:   (x={b.x:.2f}, y={b.y:.2f})")
+            #     print(f"    Distance: {step_dist:.2f} > allowed {MAX_ALLOWED_STEP:.2f}")
+            #     print("Illegal jump in path — investigate tree structure or rewire logic.")
 
             # DEBUG P_FAIL MONOTONICITY
             if b.p_fail < a.p_fail - 1e-8:  # Allow for tiny floating point error
@@ -712,8 +710,8 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2850):
             dominated = False
             for j, entry_j in enumerate(paths):
                 if i != j:
-                    if (entry_j["cost"] <= entry_i["cost"] and
-                        entry_j["p_fail"] < entry_i["p_fail"] or
+                    if ((entry_j["cost"] <= entry_i["cost"] and
+                        entry_j["p_fail"] < entry_i["p_fail"]) or
                         (entry_j["cost"] < entry_i["cost"] and
                         entry_j["p_fail"] <= entry_i["p_fail"])):
                         dominated = True
@@ -724,6 +722,27 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2850):
 
 
     filtered_paths = pareto_filter(multiple_paths)
+    # Print each unique path's cost and p_fail
+    print("\nPre-Filtered unique paths (cost, p_fail):")
+    for entry in filtered_paths:
+        print(f"  cost={entry['cost']:.6f}, p_fail={entry['p_fail']:.8f}")
+
+    # Remove duplicates by (cost, p_fail), keeping the first occurrence
+    unique_filtered = []
+    seen = set()
+    for entry in filtered_paths:
+        key = (round(entry["cost"], 6), round(entry["p_fail"], 8))  # Use rounding to avoid floating point issues
+        if key not in seen:
+            seen.add(key)
+            unique_filtered.append(entry)
+
+    # Print each unique path's cost and p_fail
+    print("\nFiltered unique paths (cost, p_fail):")
+    for entry in unique_filtered:
+        print(f"  cost={entry['cost']:.6f}, p_fail={entry['p_fail']:.8f}")
+
+    # Use unique_filtered as your filtered_paths from now on
+    filtered_paths = unique_filtered
 
     return filtered_paths, multiple_paths 
 
@@ -766,8 +785,8 @@ def main():
     filtered_paths, multiple_paths = PO_RRT_Star(start, goal, grid, failure_prob_values=[0.1])
     # plot_paths_metrics(multiple_paths)
     # plot_full_paths(multiple_paths)
-    # plot_paths_summary(filtered_paths, obstacles=obstacles)
-    # plot_paths_summary(multiple_paths, obstacles=obstacles)
+    plot_paths_summary(filtered_paths, obstacles=obstacles)
+    plot_paths_summary(multiple_paths, obstacles=obstacles)
     
 
 if __name__ == '__main__':
