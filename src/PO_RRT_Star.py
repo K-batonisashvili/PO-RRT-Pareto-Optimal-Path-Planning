@@ -50,6 +50,7 @@ class Tree:
                                 f"to child at ({node.x:.2f}, {node.y:.2f})")
         if node not in self.node_list:
             self.node_list.append(node)
+            self.kdtree = None  # Invalidate KDTree cache
         if node.parent is None:
         # This is the root node
             root_path = Path()
@@ -96,6 +97,12 @@ class Tree:
         # Log the removal for debugging
         logging.info(f"Removed orphaned node: x={node.x}, y={node.y}, theta={node.theta}")
 
+    def build_kdtree(self):
+        """
+        Build a cKDTree for efficient nearest neighbor searches.
+        """
+        self.kdtree = cKDTree([(n.x, n.y) for n in self.node_list])
+
     def finalize_path(self, goal_node):
         path = Path()
         current = goal_node
@@ -124,34 +131,23 @@ class Tree:
             self.path_count += 1
 
 
-    def nearest(self, rand_node):
-        if not self.node_list:
-            return None
-
-        coords = [(n.x, n.y) for n in self.node_list]
-        kdtree = cKDTree(coords)
-        _, idx = kdtree.query([rand_node.x, rand_node.y], k=1)
-        return self.node_list[idx]
+    def nearest(self, node):
+        """Return nearest node using cached KDTree."""
+        if self.kdtree is None:
+            self.build_kdtree()
+        _, idx = self.kdtree.query([node.x, node.y], k=1)
+        return self.node_list[int(idx)]
     
-    
-    def pareto_dominates(self, cost1, fail1, cost2, fail2):
-        """
-        Check if node1 dominates node2 in terms of cost and failure probability.
-        """
-        return (cost1 <= cost2 and fail1 < fail2) or \
-        (cost1 < cost2 and fail1  <= fail2)
-    
+        
     def neighbors(self, node):
         """
         Efficiently find all unique nodes within PARETO_RADIUS using cKDTree.
         """
-        if not hasattr(self, '_kdtree') or len(self.node_list) != getattr(self, '_kdtree_node_count', -1):
-            coords = [(n.x, n.y) for n in self.node_list]
-            self._kdtree = cKDTree(coords)
-            self._kdtree_node_count = len(self.node_list)
+        if self.kdtree is None:
+            self.build_kdtree()
 
         # Query neighbors within radius
-        idxs = self._kdtree.query_ball_point([node.x, node.y], r=PARETO_RADIUS)
+        idxs = self.kdtree.query_ball_point([node.x, node.y], r=PARETO_RADIUS)
 
         neighbors = []
         seen = set()
@@ -167,6 +163,39 @@ class Tree:
                 seen.add(node_signature)
 
         return neighbors
+    
+    def is_descendant(self, ancestor, node):
+        """Return True if node is in the subtree rooted at ancestor."""
+        stack = [ancestor]
+        while stack:
+            cur = stack.pop()
+            if cur is node:
+                return True
+            stack.extend(cur.children)
+        return False
+    
+    def rebuild_path_for_node(self, node):
+        """Rebuild the path from root to this node and update references."""
+        stack = []
+        cur = node
+        while cur:
+            stack.append(cur)
+            cur = cur.parent
+        new_nodes = list(reversed(stack))  # root -> node
+
+        new_path = Path()
+        for n in new_nodes:
+            new_path.add_node(n)
+            n.path = new_path
+        return new_path
+
+
+    def pareto_dominates(self, cost1, fail1, cost2, fail2):
+        """
+        Check if node1 dominates node2 in terms of cost and failure probability.
+        """
+        return (cost1 <= cost2 and fail1 < fail2) or \
+        (cost1 < cost2 and fail1  <= fail2)
     
     def choose_parents(self, znear, x, y, theta, grid):
         """
@@ -259,6 +288,10 @@ class Tree:
         # 3) For each non-dominated candidate, perform the rewire
         for z, new_cost, new_log_survival, new_p_fail in pareto_rewires:
             # Check if this is a strictly dominant rewire
+            
+            if self.is_descendant(z, nn):
+                continue  # Prevent cycles
+            
             strictly_dominant = self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail)
 
             if strictly_dominant:
@@ -283,9 +316,8 @@ class Tree:
                 z.log_survival = new_log_survival
                 z.p_fail = new_p_fail
 
-                # Add neighbor into the same Path object as new_node
-                z.path = nn.path
-                nn.path.add_node(z)
+                # Rebuild ordered path
+                self.rebuild_path_for_node(z)
 
                 # Propagate down the subtree
                 self.propagate_cost(z, grid, lc, edge_segments)
@@ -487,7 +519,7 @@ class Grid:
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
+def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
@@ -625,7 +657,7 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=5000):
                             tree.add_node(nn, multiple_children=multiple_children)
                             tree.rewire(tree.neighbors(nn), nn, grid, lc, edge_segments)
                             # update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
-                # redraw_tree(tree, lc, edge_segments)
+                if current_iter % 500 == 0: redraw_tree(tree, lc, edge_segments)
 
     # 1. Collect all goal nodes in the tree
     goal_nodes = []
@@ -768,8 +800,8 @@ def main():
         # {"type": "circular", "center": (50, 80), "radius": 10, "safe_dist": 5},
         {"type": "rectangular", "x_range": (15, 45), "y_range": (10, 40), "probability": 0.05},
         {"type": "rectangular", "x_range": (50, 70), "y_range": (45, 60), "probability": 0.05},
-        {"type": "circular", "center": (10, 58), "radius": 8, "safe_dist": 5},
-        {"type": "circular", "center": (30, 60), "radius": 10, "safe_dist": 5},
+        {"type": "circular", "center": (10, 52), "radius": 8, "safe_dist": 5},
+        {"type": "circular", "center": (30, 57), "radius": 10, "safe_dist": 5},
         {"type": "circular", "center": (60, 20), "radius": 18, "safe_dist": 5}
     ]
 

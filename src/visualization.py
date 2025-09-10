@@ -143,7 +143,12 @@ def plot_paths_summary(paths, obstacles=None):
     Optionally plots obstacles on the right plot if obstacles is provided.
     """
     # Sort by p_fail (increasing)
-    top_paths = sorted(paths, key=lambda entry: entry["p_fail"])[:10]
+    if len(paths) <= 15:
+        top_paths = sorted(paths, key=lambda entry: entry["p_fail"])[:10]
+        show_legend = True
+    else:
+        top_paths = sorted(paths, key=lambda entry: entry["p_fail"])
+        show_legend = False
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
@@ -160,8 +165,9 @@ def plot_paths_summary(paths, obstacles=None):
     ax1.set_ylabel('Failure Probability')
     ax1.set_title('Cost vs. Failure Probability (Top 10)')
     ax1.grid(True)
-    ncol = min(2, len(top_paths))  # Use up to 3 columns, or fewer if less paths
-    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
+    ncol = min(2, len(top_paths))
+    if show_legend:
+        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
 
     # --- Right: Plot Obstacles if provided ---
     if obstacles is not None:
@@ -194,7 +200,8 @@ def plot_paths_summary(paths, obstacles=None):
     ax2.set_ylabel('Y')
     ax2.set_title('Full Paths from Start to Goal (Top 10)')
     ax2.grid(True)
-    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
+    if show_legend:
+        ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
 
     plt.tight_layout()
     plt.show(block=True)

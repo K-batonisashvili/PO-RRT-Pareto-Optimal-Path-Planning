@@ -39,22 +39,40 @@ def accumulate_log_survival(parent, child, grid, num_samples=5):
     Accumulate log survival across the edge from parent to child,
     by sampling grid risk at points along the edge.
     """
-    xs = np.linspace(parent.x, child.x, num_samples)
-    ys = np.linspace(parent.y, child.y, num_samples)
+    xs = np.linspace(parent.x, child.x, num_samples + 1)
+    ys = np.linspace(parent.y, child.y, num_samples + 1)
 
     log_s_step = 0.0
-    for x, y in zip(xs, ys):
-        xi = int(x / grid.width * (grid.grid.shape[0] - 1))
-        yi = int(y / grid.height * (grid.grid.shape[1] - 1))
-        if 0 <= xi < grid.grid.shape[0] and 0 <= yi < grid.grid.shape[1]:
-            raw_p = grid.grid[xi, yi]
-            p_clip = np.clip(raw_p, 0.0, 1.0)
-            if p_clip > 0.0:
-                log_s_step += np.log(1 - p_clip)
 
-    log_s_step *= distance_to(parent, child) / num_samples
-    
+    for i in range(num_samples):
+        # midpoint sampling
+        x = (xs[i] + xs[i + 1]) / 2
+        y = (ys[i] + ys[i + 1]) / 2
+
+        xi = int(x / grid.width * (grid.grid.shape[1] - 1))
+        yi = int(y / grid.height * (grid.grid.shape[0] - 1))
+
+        xi = np.clip(xi, 0, grid.grid.shape[1] - 1) 
+        yi = np.clip(yi, 0, grid.grid.shape[0] - 1) 
+
+        raw_p = grid.grid[xi, yi] 
+        segment_length = distance_to((xs[i], ys[i]), (xs[i + 1], ys[i + 1]))
+        log_s_step += np.log(1 - np.clip(raw_p, 0.0, 1.0)) * segment_length
+
     return log_s_step
+
+    # for x, y in zip(xs, ys):
+    #     xi = int(x / grid.width * (grid.grid.shape[0] - 1))
+    #     yi = int(y / grid.height * (grid.grid.shape[1] - 1))
+    #     if 0 <= xi < grid.grid.shape[0] and 0 <= yi < grid.grid.shape[1]:
+    #         raw_p = grid.grid[xi, yi]
+    #         p_clip = np.clip(raw_p, 0.0, 1.0)
+    #         if p_clip > 0.0:
+    #             log_s_step += np.log(1 - p_clip)
+
+    # log_s_step *= distance_to(parent, child) / num_samples
+    
+    # return log_s_step
 
 def get_path_signature(node_list):
     return tuple((round(n.x, 2), round(n.y, 2), round(n.theta, 2)) for n in node_list)
