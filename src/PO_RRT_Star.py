@@ -1,23 +1,434 @@
+import time
 import numpy as np
 import logging
 import tkinter as tk
+import math
 from tkinter import simpledialog
-from helper_functions import distance_to, get_coord, is_collision_free, steer, accumulate_log_survival, get_path_signature
-from visualization import init_progress_plot_3d, update_progress_plot_3d, plot_paths_metrics, redraw_tree, plot_full_paths, plot_paths_summary
-from scipy.spatial import cKDTree
+from helper_functions import is_edge_collision_free, distance_to, get_coord, is_collision_free, steer, accumulate_log_survival, get_path_signature
+from visualization import plot_final_tree_2d,init_progress_plot_3d, update_progress_plot_3d, plot_paths_metrics, redraw_tree, plot_full_paths, plot_paths_summary, init_progress_plot_2d, redraw_tree_2d, interactive_spectral_cluster_plot
+from scipy.spatial import cKDTree as ckdtree
+import json, time
+
 
 logging.basicConfig(level=logging.INFO)
-
 # Define constants
 GRID_WIDTH = 100
 GRID_HEIGHT = 100
-PARETO_RADIUS = 8
-DEFAULT_STEP_SIZE = 8
+PARETO_RADIUS = 10
+DEFAULT_STEP_SIZE = 10
 PROBABILITY_THRESHOLD = 0.01
+
+
+# quick import/export functions for tree+paths
+def _pack_paths_for_json(paths):
+    out = []
+    for entry in paths:
+        p = entry["path"]
+        nodes = p.nodes if hasattr(p, "nodes") else p
+        out.append({
+            "cost": float(entry["cost"]),
+            "p_fail": float(entry["p_fail"]),
+            "nodes": [
+                {
+                    "x": float(n.x),
+                    "y": float(n.y),
+                    "theta": float(getattr(n, "theta", 0.0)),
+                    "cost": float(getattr(n, "cost", 0.0)),
+                    "p_fail": float(getattr(n, "p_fail", 0.0)),
+                } for n in nodes
+            ],
+        })
+    return out
+
+def save_tree_debug_json(filename, tree):
+    """
+    Export the entire tree structure for debugging:
+    - Every node with its coordinates, cost, p_fail, flags
+    - Parent-child relationships as IDs
+
+    This uses tree.node_list as the canonical set of nodes.
+    """
+    # Assign an integer ID to every node
+    node_id = {}
+    nodes_out = []
+
+    for idx, n in enumerate(tree.node_list):
+        node_id[n] = idx
+        nodes_out.append({
+            "id": idx,
+            "x": float(n.x),
+            "y": float(n.y),
+            "theta": float(getattr(n, "theta", 0.0)),
+            "cost": float(getattr(n, "cost", 0.0)),
+            "p_fail": float(getattr(n, "p_fail", 0.0)),
+            "log_survival": float(getattr(n, "log_survival", 0.0)),
+            "is_start": bool(getattr(n, "is_start", False)),
+            "is_goal": bool(getattr(n, "is_goal", False)),
+        })
+
+    # Build parent-child edges as pairs of node IDs
+    edges_out = []
+    for n in tree.node_list:
+        pid = node_id.get(n.parent) if getattr(n, "parent", None) is not None else None
+        cid = node_id[n]
+        if pid is not None:
+            edges_out.append([int(pid), int(cid)])
+
+    payload = {
+        "meta": {
+            "saved_at_unix": time.time(),
+            "num_nodes": len(nodes_out),
+            "num_edges": len(edges_out),
+        },
+        "nodes": nodes_out,
+        "edges": edges_out,
+    }
+
+    with open(filename, "w") as f:
+        json.dump(payload, f, indent=2)
+    print(f"[OK] exported tree debug → {filename}")
+
+
+def save_run_json(filename, start, goal, grid, filtered_paths, multiple_paths, edge_segments):
+    def _as_seq(x):
+        return x.tolist() if isinstance(x, np.ndarray) else x
+
+    def _norm_point(pt):
+        pt = _as_seq(pt)
+        # pt can be (x,y) or (x,y,z)
+        if len(pt) == 2:
+            x, y = pt
+            z = 0.0
+        elif len(pt) == 3:
+            x, y, z = pt
+        else:
+            return None
+        return [float(x), float(y), float(z)]
+
+    def _norm_segment(item):
+        # Accept shapes:
+        #   [(x,y,z), (x2,y2,z2)]
+        #   [(x,y),   (x2,y2)]
+        #   ([(...),(...)], "green")
+        seg = item
+        if isinstance(seg, (list, tuple)) and len(seg) == 2:
+            a, b = seg
+            # colored form?
+            if isinstance(b, str):
+                seg = a  # first element is the actual segment
+        # now seg should be a pair of points
+        if not (isinstance(seg, (list, tuple)) and len(seg) >= 2):
+            return None
+        p1, p2 = seg[0], seg[1]
+        P1 = _norm_point(p1)
+        P2 = _norm_point(p2)
+        if P1 is None or P2 is None:
+            return None
+        return [P1, P2]
+
+    # 1) Normalize any collected edge segments
+    edges = []
+    if edge_segments:
+        for item in edge_segments:
+            e = _norm_segment(item)
+            if e:
+                edges.append(e)
+
+    # 2) Fallback: build edges from paths if nothing got collected
+    if not edges:
+        def add_from(entries):
+            for entry in entries:
+                p = entry["path"]
+                nodes = p.nodes if hasattr(p, "nodes") else p
+                for i in range(1, len(nodes)):
+                    n1, n2 = nodes[i-1], nodes[i]
+                    edges.append([
+                        [float(n1.x), float(n1.y), float(getattr(n1, "p_fail", 0.0))],
+                        [float(n2.x), float(n2.y), float(getattr(n2, "p_fail", 0.0))]
+                    ])
+        add_from(filtered_paths)
+        add_from(multiple_paths)
+
+    payload = {
+        "meta": {
+            "saved_at_unix": time.time(),
+            "start": list(start),
+            "goal": list(goal),
+            "grid_size": [int(grid.width), int(grid.height)],
+        },
+        "obstacles": getattr(grid, "obstacles", []),
+        "paths": {
+            "filtered": _pack_paths_for_json(filtered_paths),
+            "multiple": _pack_paths_for_json(multiple_paths),
+        },
+        "tree": {
+            "edges": edges  # always [[x,y,z],[x2,y2,z2]]
+        },
+    }
+    with open(filename, "w") as f:
+        json.dump(payload, f)
+    print(f"[OK] exported → {filename}")
+
+
+def _resample_polyline_xy(nodes, m=64):
+    """
+    Resample a polyline (list of Nodes) to m equally spaced points along arc length.
+    Returns (m,2) array of xy points.
+    """
+    xs = np.asarray([n.x for n in nodes], dtype=float)
+    ys = np.asarray([n.y for n in nodes], dtype=float)
+    if len(xs) < 2:
+        out = np.tile(np.array([xs[0], ys[0]], dtype=float), (m, 1))
+        return out
+
+    seg_dx = np.diff(xs)
+    seg_dy = np.diff(ys)
+    seg_len = np.hypot(seg_dx, seg_dy)
+    total = float(seg_len.sum())
+    if total <= 1e-12:
+        out = np.tile(np.array([xs[0], ys[0]], dtype=float), (m, 1))
+        return out
+
+    cum = np.concatenate([[0.0], np.cumsum(seg_len)])
+    # target arc-lengths
+    t = np.linspace(0.0, total, m)
+    out = np.zeros((m, 2), dtype=float)
+
+    # walk segments once
+    j = 0
+    for i, ti in enumerate(t):
+        # advance until cum[j] <= ti <= cum[j+1]
+        while j+1 < len(cum) and ti > cum[j+1]:
+            j += 1
+        if j+1 >= len(cum):
+            out[i] = [xs[-1], ys[-1]]
+        else:
+            # local interpolation parameter
+            if cum[j+1] - cum[j] <= 1e-12:
+                alpha = 0.0
+            else:
+                alpha = (ti - cum[j]) / (cum[j+1] - cum[j])
+            x = xs[j] + alpha * (xs[j+1] - xs[j])
+            y = ys[j] + alpha * (ys[j+1] - ys[j])
+            out[i] = [x, y]
+    return out
+
+
+def _pairwise_path_distance(entries, m_points=64, w_xy=1.0, w_cost=0.25, w_pfail=0.75):
+    """
+    Build an NxN distance matrix between completed paths combining:
+      - RMS XY distance of resampled polylines (weight w_xy)
+      - normalized Δcost   (weight w_cost)
+      - normalized Δp_fail (weight w_pfail)
+    entries: list of {"path": Path, "cost": float, "p_fail": float}
+    """
+    N = len(entries)
+    if N == 0:
+        return np.zeros((0, 0))
+    xy = []
+    costs = np.zeros(N, dtype=float)
+    pf   = np.zeros(N, dtype=float)
+    for i, e in enumerate(entries):
+        nodes = e["path"].nodes if hasattr(e["path"], "nodes") else e["path"]
+        xy.append(_resample_polyline_xy(nodes, m=m_points))
+        costs[i] = float(e["cost"])
+        pf[i]    = float(e["p_fail"])
+    xy = np.stack(xy, axis=0)  # (N, m, 2)
+
+    # scales for normalization (avoid div by zero)
+    c_scale = np.std(costs) if np.std(costs) > 1e-12 else 1.0
+    p_scale = np.std(pf)    if np.std(pf)    > 1e-12 else 1.0
+
+    D = np.zeros((N, N), dtype=float)
+    for i in range(N):
+        Xi = xy[i]
+        for j in range(i+1, N):
+            Xj = xy[j]
+            # RMS pointwise XY distance
+            dxy = np.sqrt(np.mean((Xi[:, 0] - Xj[:, 0])**2 + (Xi[:, 1] - Xj[:, 1])**2))
+            # normalized metric deltas
+            dcost = abs(costs[i] - costs[j]) / c_scale
+            dpf   = abs(pf[i]    - pf[j])    / p_scale
+            d = np.sqrt((w_xy * dxy)**2 + (w_cost * dcost)**2 + (w_pfail * dpf)**2)
+            D[i, j] = D[j, i] = d
+    return D
+
+
+def _self_tuning_affinity(D, neighbor_k=7):
+    """
+    Zelnik-Manor & Perona self-tuning kernel:
+        A_ij = exp( - D_ij^2 / (σ_i σ_j) )
+    with σ_i = distance to k-th nearest neighbor of i.
+    """
+    N = D.shape[0]
+    if N == 0:
+        return np.zeros((0, 0))
+    # sort distances row-wise (exclude self at 0)
+    sortD = np.sort(D, axis=1)
+    k = max(1, min(neighbor_k, max(1, N-1)))
+    sig = sortD[:, k]  # distance to k-th neighbor (0-based; self is 0)
+    sig[sig < 1e-12] = np.median(sig[sig > 0]) if np.any(sig > 0) else 1.0
+    S = sig[:, None] * sig[None, :]
+    A = np.exp(-(D**2) / (S + 1e-12))
+    np.fill_diagonal(A, 0.0)
+    # symmetrize (should already be)
+    return 0.5 * (A + A.T)
+
+
+def _normalized_laplacian(A):
+    d = A.sum(axis=1)
+    d[d < 1e-12] = 1e-12
+    Dmh = np.diag(1.0 / np.sqrt(d))
+    # L_sym = I - D^-1/2 A D^-1/2
+    I = np.eye(A.shape[0])
+    return I - Dmh @ A @ Dmh
+
+
+def _eigengap_k_from_A(A, k_max=10):
+    """
+    Choose k using eigengap heuristic on normalized Laplacian.
+    Ensure k in [2, min(k_max, N)].
+    """
+    N = A.shape[0]
+    if N <= 2:
+        return max(1, N)
+    k_max = int(max(2, min(k_max, N)))
+    L = _normalized_laplacian(A)
+    # small eigenvalues first
+    vals, _ = np.linalg.eigh(L)
+    vals = np.clip(vals, 0.0, None)[:k_max]  # first k_max smallest
+    # ignore gap at index 0 (between λ0≈0 and λ1)
+    if len(vals) < 3:
+        return min(2, N)
+    gaps = vals[1:] - vals[:-1]
+    # pick the largest gap starting from index 1
+    idx = 1 + int(np.argmax(gaps[1:]))  # 1-based gap -> k = idx+1
+    k = idx + 1
+    return int(max(2, min(k, k_max)))
+
+
+def _kmeans_pp_init(X, k, rng):
+    n = X.shape[0]
+    # pick first center uniformly
+    centers = [rng.randint(0, n)]
+    # distances to nearest center
+    d2 = np.full(n, np.inf)
+    for _ in range(1, k):
+        d2 = np.minimum(d2, np.sum((X - X[centers[-1]])**2, axis=1))
+        probs = d2 / d2.sum()
+        centers.append(rng.choice(n, p=probs))
+    return np.array(centers, dtype=int)
+
+
+def _kmeans(X, k, n_init=10, max_iter=100, random_state=0):
+    rng = np.random.RandomState(random_state)
+    best_inertia = np.inf
+    best_labels  = None
+    for _ in range(n_init):
+        centers_idx = _kmeans_pp_init(X, k, rng)
+        centers = X[centers_idx].copy()
+        labels = np.zeros(X.shape[0], dtype=int)
+        for _it in range(max_iter):
+            # assign
+            d2 = ((X[:, None, :] - centers[None, :, :])**2).sum(axis=2)
+            new_labels = np.argmin(d2, axis=1)
+            if np.array_equal(new_labels, labels):
+                break
+            labels = new_labels
+            # update
+            for j in range(k):
+                mask = labels == j
+                if not np.any(mask):
+                    # re-seed empty cluster
+                    centers[j] = X[rng.randint(0, X.shape[0])]
+                else:
+                    centers[j] = X[mask].mean(axis=0)
+        inertia = np.min(((X[:, None, :] - centers[None, :, :])**2).sum(axis=2), axis=1).sum()
+        if inertia < best_inertia:
+            best_inertia = inertia
+            best_labels = labels.copy()
+    return best_labels
+
+def spectral_cluster_paths(
+    path_entries,
+    n_clusters="auto",
+    m_points=64,
+    w_xy=1.0,
+    w_cost=0.25,
+    w_pfail=0.75,
+    neighbor_k=7,
+    prefer_sklearn=True,
+    random_state=0,
+):
+    """
+    Cluster completed paths using spectral clustering on a self-tuned affinity.
+
+    Returns:
+      clusters: list of {"members":[...], "representative": entry}
+      labels:   np.ndarray shape (N,)
+      debug:    dict with matrices used
+    """
+    N = len(path_entries)
+    if N == 0:
+        return [], np.zeros(0, dtype=int), {}
+    if N == 1:
+        return [{"members":[path_entries[0]], "representative": path_entries[0]}], np.array([0], int), {}
+
+    # pairwise distances and affinity
+    D = _pairwise_path_distance(
+        path_entries, m_points=m_points, w_xy=w_xy, w_cost=w_cost, w_pfail=w_pfail
+    )
+    A = _self_tuning_affinity(D, neighbor_k=neighbor_k)
+
+    # cluster count
+    if isinstance(n_clusters, str) and n_clusters.lower() == "auto":
+        k = _eigengap_k_from_A(A, k_max=min(10, N))
+        if k < 2:  # safety
+            k = min(2, N)
+    else:
+        k = int(max(1, min(int(n_clusters), N)))
+
+    labels = None
+    used_sklearn = False
+    if prefer_sklearn:
+        try:
+            from sklearn.cluster import SpectralClustering
+            sc = SpectralClustering(
+                n_clusters=k, affinity="precomputed", assign_labels="kmeans", random_state=random_state
+            )
+            labels = sc.fit_predict(A)
+            used_sklearn = True
+        except Exception:
+            labels = None
+
+    if labels is None:
+        # NumPy-only fallback: spectral embedding + kmeans
+        L = _normalized_laplacian(A)
+        vals, vecs = np.linalg.eigh(L)
+        # take k smallest eigenvectors (skip the first if val ~ 0)
+        order = np.argsort(vals)
+        U = vecs[:, order[:k]]
+        # row normalize
+        row_norm = np.linalg.norm(U, axis=1, keepdims=True)
+        row_norm[row_norm < 1e-12] = 1.0
+        Z = U / row_norm
+        labels = _kmeans(Z, k, n_init=10, max_iter=100, random_state=random_state)
+
+    # build clusters with representatives
+    clusters = []
+    for lab in sorted(set(labels.tolist())):
+        members = [path_entries[i] for i in range(N) if labels[i] == lab]
+        rep = min(members, key=lambda e: (e["cost"], e["p_fail"]))
+        clusters.append({"members": members, "representative": rep})
+
+    debug = {"D": D, "A": A, "k": k, "used_sklearn": used_sklearn}
+    return clusters, labels, debug
+
+
 
 # ----------------------- #
 #       Main Classes      #
-# ----------------------- #
+# ----------------------- #t
 
 # --------------- Tree Class --------------- #
 class Tree:
@@ -99,9 +510,44 @@ class Tree:
 
     def build_kdtree(self):
         """
-        Build a cKDTree for efficient nearest neighbor searches.
+        Build a ckdtree for efficient nearest neighbor searches.
         """
-        self.kdtree = cKDTree([(n.x, n.y) for n in self.node_list])
+        self.kdtree = ckdtree([(n.x, n.y) for n in self.node_list])
+
+    def connection_radius(self):
+        """
+        Dynamic RRT* neighbor radius:
+            r_n = min{ gamma * (log n / n)^(1/d), eta }
+
+        - We use d = 2 (x, y only, matching the kd-tree).
+        - Approximate free space volume by grid.width * grid.height.
+        - eta is chosen as a multiple of DEFAULT_STEP_SIZE.
+        """
+        # Number of nodes in the tree (avoid log(1) / log(0))
+        n = max(len(self.node_list), 2)
+        d = 2  # 2D (x,y) space for the kd-tree
+
+        # Volume of unit ball in R^2
+        zeta_d = math.pi
+
+        # Approximate free volume by the grid dimensions
+        free_volume = float(self.grid.width * self.grid.height)
+
+        # Gamma_RRT* per Karaman & Frazzoli (up to a constant factor)
+        gamma_rrt = 2.0 * ((1.0 + 1.0 / d) ** (1.0 / d)) * (
+            (free_volume / zeta_d) ** (1.0 / d)
+        )
+
+        # Base theoretical radius
+        base_radius = gamma_rrt * ((math.log(n) / n) ** (1.0 / d))
+
+        # Cap radius by a multiple of the step size (eta)
+        eta = DEFAULT_STEP_SIZE * 2.0  # tune this multiplier as desired
+        r = min(base_radius, eta)
+
+        # Safety: avoid zero / extremely tiny radius
+        return max(r, 0.5 * DEFAULT_STEP_SIZE)
+
 
     def finalize_path(self, goal_node):
         path = Path()
@@ -139,15 +585,48 @@ class Tree:
         return self.node_list[int(idx)]
     
         
+    # def neighbors(self, node):
+    #     """
+    #     Efficiently find all unique nodes within PARETO_RADIUS using ckdtree.
+    #     """
+    #     if self.kdtree is None:
+    #         self.build_kdtree()
+
+    #     # Query neighbors within radius
+    #     idxs = self.kdtree.query_ball_point([node.x, node.y], r=PARETO_RADIUS)
+
+    #     neighbors = []
+    #     seen = set()
+
+    #     for idx in idxs:
+    #         n = self.node_list[idx]
+    #         if n is node:
+    #             continue
+
+    #         node_signature = (n.x, n.y, n.theta, round(n.cost, 3), round(n.p_fail, 5))
+    #         if node_signature not in seen:
+    #             neighbors.append(n)
+    #             seen.add(node_signature)
+
+    #     return neighbors
+
     def neighbors(self, node):
         """
-        Efficiently find all unique nodes within PARETO_RADIUS using cKDTree.
+        Efficiently find all unique nodes within a dynamic RRT* radius
+        using ckdtree.
+
+        Radius:
+            r_n = min{ gamma * (log n / n)^(1/d), eta }
+        with d = 2 and eta tied to DEFAULT_STEP_SIZE.
         """
         if self.kdtree is None:
             self.build_kdtree()
 
+        # Dynamic radius per RRT* theory
+        radius = self.connection_radius()
+
         # Query neighbors within radius
-        idxs = self.kdtree.query_ball_point([node.x, node.y], r=PARETO_RADIUS)
+        idxs = self.kdtree.query_ball_point([node.x, node.y], r=radius)
 
         neighbors = []
         seen = set()
@@ -157,12 +636,15 @@ class Tree:
             if n is node:
                 continue
 
-            node_signature = (n.x, n.y, n.theta, round(n.cost, 3), round(n.p_fail, 5))
+            node_signature = (n.x, n.y, n.theta,
+                              round(n.cost, 3),
+                              round(n.p_fail, 5))
             if node_signature not in seen:
                 neighbors.append(n)
                 seen.add(node_signature)
 
         return neighbors
+
     
     def is_descendant(self, ancestor, node):
         """Return True if node is in the subtree rooted at ancestor."""
@@ -175,7 +657,12 @@ class Tree:
         return False
     
     def rebuild_path_for_node(self, node):
-        """Rebuild the path from root to this node and update references."""
+        """
+        Rebuild the path from root to this node and update references.
+        Ensures that nodes on the new path are removed from any old paths
+        and that the new path is tracked in self.paths.
+        """
+        # 1) Collect nodes from root → node
         stack = []
         cur = node
         while cur:
@@ -183,10 +670,22 @@ class Tree:
             cur = cur.parent
         new_nodes = list(reversed(stack))  # root -> node
 
+        # 2) Remove these nodes from any existing paths
+        for n in new_nodes:
+            old_path = n.path
+            if old_path is not None and old_path in self.paths:
+                if n in old_path.nodes:
+                    old_path.nodes.remove(n)
+
+        # 3) Build a new path and re-assign .path
         new_path = Path()
         for n in new_nodes:
-            new_path.add_node(n)
-            n.path = new_path
+            new_path.add_node(n)  # also sets n.path = new_path
+
+        # 4) Register this path in the tree
+        self.paths.append(new_path)
+        self.path_count += 1
+
         return new_path
 
 
@@ -210,6 +709,8 @@ class Tree:
         new_node_candidates = []
         
         for potential_parent in znear:
+            if not is_edge_collision_free(potential_parent, test_node, grid, num_samples=10, p_threshold=0.9):
+                continue
             log_s_step = accumulate_log_survival(potential_parent, test_node, grid)
             cost   = potential_parent.cost + distance_to(potential_parent, Node(x,y,theta))
             log_survival = potential_parent.log_survival + log_s_step
@@ -254,7 +755,7 @@ class Tree:
 
         return final_pareto_nodes
     
-    def rewire(self, znear, nn, grid, lc=None, edge_segments=None):
+    def rewire(self, znear, nn, grid):
         """
         Rewire the tree to optimize paths based on cost and failure probability.
         Now allows all non-dominated (Pareto-optimal) rewires, not just strictly dominating ones.
@@ -268,6 +769,8 @@ class Tree:
             if distance_to(nn, z) > DEFAULT_STEP_SIZE + 1e-3:
                 print(f" [rewire] Illegal rewire: distance = {distance_to(nn, z):.2f} "
                       f"from ({nn.x:.2f}, {nn.y:.2f}) to ({z.x:.2f}, {z.y:.2f})")
+            if not is_edge_collision_free(nn, z, grid, num_samples=10, p_threshold=0.9):
+                continue
             log_s_step = accumulate_log_survival(nn, z, grid)
             new_log_survival = nn.log_survival + log_s_step
             new_cost = nn.cost + distance_to(nn, z)
@@ -302,11 +805,6 @@ class Tree:
                         old_parent.children.remove(z)
                     z.parent = None
 
-                for path in self.paths:
-                    if z in path.nodes:
-                        path.nodes.remove(z)
-                        break
-
                 # Attach neighbor under new_node
                 z.parent = nn
                 nn.children.append(z)
@@ -320,7 +818,7 @@ class Tree:
                 self.rebuild_path_for_node(z)
 
                 # Propagate down the subtree
-                self.propagate_cost(z, grid, lc, edge_segments)
+                self.propagate_cost(z, grid)
                 self.rewire_counts += 1
             else:
                 # Non-dominated but not strictly dominant = new node/branch
@@ -333,10 +831,10 @@ class Tree:
                 new_z.path = nn.path
                 self.add_node(new_z, multiple_children=True) 
                 new_z.is_additional_rewire = True  # rewire tracking
-                # self.propagate_cost(new_z, grid, lc, edge_segments)
+                self.propagate_cost(new_z, grid)
                 self.rewire_counts += 1
 
-    def propagate_cost(self, root, grid, lc=None, edge_segments=None):
+    def propagate_cost(self, root, grid):
         """
         Iteratively propagate cost & failure updates down the subtree.
         """
@@ -357,10 +855,6 @@ class Tree:
                 child.p_fail = new_p_fail
                 child.path = new_path
                 queue.append(child)  # only propagate forward
-
-                # # Draw the new edge with updated p_fail
-                # if lc is not None and edge_segments is not None:
-                #     update_progress_plot_3d(lc, edge_segments, node, child)
 
     def get_path_to(self, goal_node):
         """
@@ -401,8 +895,12 @@ class Path:
         """
         Check if the path is complete, i.e., it starts at the root and ends at a goal node.
         """
-        return self.nodes and self.nodes[0].is_start and self.nodes[-1].is_goal and \
-               sum(1 for n in self.nodes if n.is_goal) == 1
+        return (
+            bool(self.nodes)
+            and self.nodes[0].is_start
+            and self.nodes[-1].is_goal
+            and sum(1 for n in self.nodes if n.is_goal) == 1
+        )
     
     def __repr__(self):
         return f"Path(len={len(self.nodes)}, cost={self.cost:.2f}, p_fail={self.p_fail:.2f})"
@@ -519,7 +1017,7 @@ class Grid:
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
+def PO_RRT_Star(start, goal, grid, max_iter):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
@@ -530,12 +1028,24 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
     multiple_paths = []
     goal_tracker = set()
 
-    fig, ax, lc, edge_segments = init_progress_plot_3d(
-    start,
-    goal,
-    x_lim=(0, grid.width),
-    y_lim=(0, grid.height),
-    obstacles=grid.obstacles,
+    
+    # 3D figure
+    fig3d, ax3d, lc3d, edge_segments3d = init_progress_plot_3d(
+        start,  
+        goal,
+        x_lim=(0, grid.width),
+        y_lim=(0, grid.height),
+        obstacles=grid.obstacles,
+        z_lim=(0.0, 1.0),
+    )
+
+    # 2D figure
+    fig2d, ax2d, lc2d, edge_segments2d = init_progress_plot_2d(
+        start,  
+        goal,
+        x_lim=(0, grid.width),
+        y_lim=(0, grid.height),
+        obstacles=grid.obstacles,
     )   
 
     
@@ -547,21 +1057,12 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
             nearest_node = tree.nearest(rand_node)
             x, y, theta = steer(nearest_node, rand_node, DEFAULT_STEP_SIZE)
             new_node = Node(x, y, theta)
-            if is_collision_free(new_node, grid):
-                # Check if the new node is collision-free              
+            if is_collision_free(new_node, grid): # Check if the new node is collision-free              
                 znear = tree.neighbors(new_node)
-                
-                # Check if znear contains any nodes, if it doesn't, set the nearest node as znear
-                # if not znear:
-                #     znear = [nearest_node]
 
                 # Exclude the goal node from znear to prevent rewiring through it
                 znear = [n for n in znear if n.x != goal_node.x or n.y != goal_node.y]
                 
-                # if len(start_node.children) > 5:
-                #     print(f"Start node has {len(start_node.children)} children")
-                #     print(f"Znear: {new_nodes}")   
-
                 new_nodes = tree.choose_parents(
                         znear, 
                         new_node.x, 
@@ -576,19 +1077,13 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
                         multiple_children = True if len(nn.parent.children) > 1 else False
                         # 1) goal check per branch
                         if distance_to(nn, goal) <= DEFAULT_STEP_SIZE:
-                            # if not any(child.is_goal for child in nn.children): # Safeguard against adding multiple goal nodes
                             # connect to goal exactly once per branch
                                 goal_instance = Node(goal[0], goal[1], goal[2])
                                 goal_instance.is_goal = True
-                                if distance_to(nn, goal_instance) > DEFAULT_STEP_SIZE + 1e-3:
-                                    print(f"❌ [goal connection] Goal jump too long: {distance_to(nn, goal_instance):.2f} "
-                                                    f"from ({nn.x:.2f}, {nn.y:.2f}) to ({goal_instance.x:.2f}, {goal_instance.y:.2f})")
                                 goal_instance.parent = nn
                                 nn.children.append(goal_instance)
-                                # if not nn.added_to_tree: # safeguard against adding the same node multiple times
-                                # Make sure nn is in the tree first
                                 tree.add_node(nn, multiple_children=multiple_children)
-                                tree.rewire(tree.neighbors(nn), nn, grid, lc, edge_segments)
+                                tree.rewire(tree.neighbors(nn), nn, grid)
 
 
                                 # ─── Cost and P_Fail for goal ─────────────────────────
@@ -606,30 +1101,21 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
                                 # Add goal_instance to tree
                                 tree.add_node(goal_instance) 
                                 print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}")
-                                # redraw_tree(tree, lc, edge_segments)
                         else:
                             tree.add_node(nn, multiple_children=multiple_children)
-                            tree.rewire(tree.neighbors(nn), nn, grid, lc, edge_segments)
-                            # update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
+                            tree.rewire(tree.neighbors(nn), nn, grid)
                 else:
                     # single child branch
                     for nn in new_nodes:
                         multiple_children = True if len(nn.parent.children) > 1 else False
                         if distance_to(nn, goal) <= DEFAULT_STEP_SIZE:
-                            # if not any(child.is_goal for child in nn.children): # Safeguard against adding multiple goal nodes
                                 # ─── goal handling ─────────────────────────
                                 goal_instance = Node(goal[0], goal[1], goal[2])
                                 goal_instance.is_goal = True
-                                if distance_to(nn, goal_instance) > DEFAULT_STEP_SIZE + 1e-3:
-                                    print(f"❌ [goal connection] Goal jump too long: {distance_to(nn, goal_instance):.2f} "
-                                                    f"from ({nn.x:.2f}, {nn.y:.2f}) to ({goal_instance.x:.2f}, {goal_instance.y:.2f})")
                                 goal_instance.parent = nn
                                 nn.children.append(goal_instance)
-                                # if not nn.added_to_tree: # safeguard against adding the same node multiple times
-                                # Make sure nn is in the tree first
-                               
                                 tree.add_node(nn, multiple_children=multiple_children)
-                                tree.rewire(tree.neighbors(nn), nn, grid, lc, edge_segments)
+                                tree.rewire(tree.neighbors(nn), nn, grid)
 
 
                                 # ─── Cost and P_Fail for goal ─────────────────────────
@@ -647,17 +1133,15 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
                                 # Add goal_instance to tree
                                 tree.add_node(goal_instance) 
                                 print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}")
-
-                                # redraw_tree(tree, lc, edge_segments)
                         # 2) Not near goal, so add the new node to the tree
                         else:
                             # Add the new node to the tree
                             # multiple_children = True if len(nn.parent.children) > 1 else False
-
                             tree.add_node(nn, multiple_children=multiple_children)
-                            tree.rewire(tree.neighbors(nn), nn, grid, lc, edge_segments)
-                            # update_progress_plot_3d(lc, edge_segments, nn.parent, nn)
-                if current_iter % 500 == 0: redraw_tree(tree, lc, edge_segments)
+                            tree.rewire(tree.neighbors(nn), nn, grid)
+
+                    
+                        # redraw_tree_2d(tree, lc2d, edge_segments2d, highlighted_paths=None)
 
     # 1. Collect all goal nodes in the tree
     goal_nodes = []
@@ -683,9 +1167,6 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
                     ]
     
     
-    # Debugging output for paths
-    # redraw_tree(tree, lc, edge_segments)
-
     MAX_ALLOWED_STEP = DEFAULT_STEP_SIZE + 1e-3  # Small epsilon
 
     print("\n--- Debug: Paths from start to goal ---")
@@ -698,13 +1179,13 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
             a, b = nodes[i], nodes[i+1]
             step_dist = distance_to(a, b)
 
-            # # DEBUG JUMP
-            # if step_dist > MAX_ALLOWED_STEP:
-            #     print(f"    ILLEGAL JUMP DETECTED between nodes {i} and {i+1}:")
-            #     print(f"    From: (x={a.x:.2f}, y={a.y:.2f})")
-            #     print(f"    To:   (x={b.x:.2f}, y={b.y:.2f})")
-            #     print(f"    Distance: {step_dist:.2f} > allowed {MAX_ALLOWED_STEP:.2f}")
-            #     print("Illegal jump in path — investigate tree structure or rewire logic.")
+            # DEBUG JUMP
+            if step_dist > MAX_ALLOWED_STEP:
+                print(f"    ILLEGAL JUMP DETECTED between nodes {i} and {i+1}:")
+                print(f"    From: (x={a.x:.2f}, y={a.y:.2f})")
+                print(f"    To:   (x={b.x:.2f}, y={b.y:.2f})")
+                print(f"    Distance: {step_dist:.2f} > allowed {MAX_ALLOWED_STEP:.2f}")
+                print("Illegal jump in path — investigate tree structure or rewire logic.")
 
             # DEBUG P_FAIL MONOTONICITY
             if b.p_fail < a.p_fail - 1e-8:  # Allow for tiny floating point error
@@ -719,22 +1200,6 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
             
     num_additional_in_tree = sum(1 for n in tree.node_list if getattr(n, "is_additional_rewire", False))
     print(f"\nAdditional rewire nodes currently in tree: {num_additional_in_tree}")
-    # print("\n--- Debug: Paths from start to goal ---")
-    # for idx, entry in enumerate(multiple_paths):
-    #     path = entry["path"]
-    #     if hasattr(path, "nodes"):
-    #         nodes = path.nodes
-    #     else:
-    #         nodes = path
-    #     print(f"Path {idx+1}:")
-    #     for node in nodes:
-    #         print(f"  (x={node.x:.2f}, y={node.y:.2f}, theta={node.theta:.2f}, cost={node.cost:.2f}, p_fail={node.p_fail:.4f})"
-    #         + (" [START]" if getattr(node, "is_start", False) else "")
-    #         + (" [GOAL]" if getattr(node, "is_goal", False) else ""))
-    #     print(f"Path {idx+1} ends at: (x={path.nodes[-1].x}, y={path.nodes[-1].y}) path length={len(path)} is_goal={getattr(path.nodes[-1], 'is_goal', False)}")
-    #     print("-" * 40)
-
-    # After collecting multiple_paths, filter out dominated paths using pareto_dominates
 
     def pareto_filter(paths):
         non_dominated = []
@@ -776,50 +1241,192 @@ def PO_RRT_Star(start, goal, grid, failure_prob_values, max_iter=2900):
     # Use unique_filtered as your filtered_paths from now on
     filtered_paths = unique_filtered
 
-    return filtered_paths, multiple_paths 
+    # list of Path objects you want to highlight
+    highlight_paths = [entry["path"] for entry in filtered_paths]
+
+    # draw 3D tree + green complete paths
+    redraw_tree(tree, lc3d, edge_segments3d, highlighted_paths=highlight_paths)
+
+    # draw 2D tree + green complete paths
+    redraw_tree_2d(tree, lc2d, edge_segments2d, highlighted_paths=highlight_paths)
+
+    # debug_filename = input("Tree debug filename [porrt_tree_debug.json]: ").strip() or "porrt_tree_debug.json"
+    # save_tree_debug_json(debug_filename, tree)
+
+    return filtered_paths, multiple_paths, tree
 
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
 
 
+# ----------------------- #
+#   Post-processing: clustering
+# ----------------------- #
+def cluster_paths(path_entries, cost_tol=1.0, p_fail_tol=0.05):
+    """
+    Cluster similar paths using only cost and p_fail tolerances.
+
+    Inputs:
+      - path_entries: list of dicts {"path": Path, "cost": float, "p_fail": float}
+      - cost_tol: maximum absolute cost difference
+      - p_fail_tol: maximum absolute p_fail difference
+
+    Returns: list of clusters, each cluster is a dict:
+      {"members": [entry,...], "representative": entry}
+
+    Representative is chosen as the member with lowest cost (tie-breaker: lower p_fail).
+    """
+    remaining = list(path_entries)
+    clusters = []
+
+    def similar(a, b):
+        cost_sim = abs(a['cost'] - b['cost']) <= cost_tol
+        p_sim = abs(a['p_fail'] - b['p_fail']) <= p_fail_tol
+        return cost_sim and p_sim
+
+    while remaining:
+        seed = remaining.pop(0)
+        cluster = [seed]
+        to_remove = []
+        for other in remaining:
+            if similar(seed, other):
+                cluster.append(other)
+                to_remove.append(other)
+        # purge removed
+        for r in to_remove:
+            remaining.remove(r)
+
+        # choose representative
+        rep = min(cluster, key=lambda e: (e['cost'], e['p_fail']))
+        clusters.append({'members': cluster, 'representative': rep})
+
+    return clusters
+
+
+def summarize_clusters(clusters):
+    """Print a short summary for clusters."""
+    print(f"Found {len(clusters)} clusters")
+    for i, cl in enumerate(clusters, start=1):
+        members = cl['members']
+        rep = cl['representative']
+        print(f"Cluster {i}: {len(members)} members | repr cost={rep['cost']:.4f}, p_fail={rep['p_fail']:.6f}")
+
+
+def interactive_postprocess(filtered_paths, multiple_paths, obstacles=None):
+    """
+    Simple CLI interactive post-processing for clustering. Returns clusters.
+    """
+    if not filtered_paths:
+        print("No filtered paths to post-process.")
+        return []
+
+    print("\nPost-process (cluster similar paths by cost & p_fail)")
+    try:
+        cost_tol = float(input("cost tolerance [1.0]: ").strip() or 1.0)
+    except ValueError:
+        cost_tol = 1.0
+    try:
+        p_fail_tol = float(input("p_fail tolerance [0.05]: ").strip() or 0.05)
+    except ValueError:
+        p_fail_tol = 0.05
+
+    clusters = cluster_paths(filtered_paths, cost_tol=cost_tol, p_fail_tol=p_fail_tol)
+    summarize_clusters(clusters)
+
+    # Optionally plot cluster representatives
+    do_plot = input("Plot cluster representatives? (y/N): ").strip().lower() == 'y'
+    if do_plot and clusters:
+        reps = [c['representative'] for c in clusters]
+        try:
+            plot_paths_summary(reps, obstacles=obstacles)
+        except Exception as e:
+            print(f"Plotting failed: {e}")
+
+    return clusters
+
+# ----------------------- #
+#   Post-processing: clustering
+# ----------------------- #
+
+
 
 # Main code
 def main():
     
-    # Create the main application window
+    # Create main application window
     root = tk.Tk()
     root.withdraw()  # Hide the root window
     obstacles = []
 
     
-    start, goal = (10, 70, 0), (75, 5, 0)
+    start, goal = (3, 95, 0), (80, 50, 0)
 
     # Obstacle dictionary
     obstacles = [
         # {"type": "circular", "center": (50, 80), "radius": 10, "safe_dist": 5},
-        {"type": "rectangular", "x_range": (15, 45), "y_range": (10, 40), "probability": 0.05},
-        {"type": "rectangular", "x_range": (50, 70), "y_range": (45, 60), "probability": 0.05},
-        {"type": "circular", "center": (10, 52), "radius": 8, "safe_dist": 5},
-        {"type": "circular", "center": (30, 57), "radius": 10, "safe_dist": 5},
-        {"type": "circular", "center": (60, 20), "radius": 18, "safe_dist": 5}
+        # {"type": "rectangular", "x_range": (20, 80), "y_range": (20, 80), "probability": 0.05},
+        # {"type": "rectangular", "x_range": (30, 90), "y_range": (20, 30), "probability": 0.05},
+        # {"type": "rectangular", "x_range": (10, 60), "y_range": (40, 50), "probability": 0.07},
+        {"type": "circular", "center": (50, 50), "radius": 25, "safe_dist": 7},
+        {"type": "circular", "center": (0, 50), "radius": 10, "safe_dist": 4},
+        {"type": "circular", "center": (100, 50), "radius": 10, "safe_dist": 4}
     ]
 
-    
-    # failure_prob_values = simpledialog.askstring("Input", "Enter the failure probabilities (comma-separated):")
-    # if failure_prob_values:
-    #     failure_prob_values = [float(x.strip()) for x in failure_prob_values.split(',')]
-    # else:
-    #     failure_prob_values = [0.1, 0.2, 0.3]  # Default values if none provided
 
+    # Ask for an integer number of samples. askinteger returns an int or None.
+    sample_count = simpledialog.askinteger(
+        "Input",
+        "Enter how many samples you'd like to generate:",
+        initialvalue=3000,
+        minvalue=1,
+    )
     grid = Grid(GRID_WIDTH, GRID_HEIGHT, obstacles)
 
-    filtered_paths, multiple_paths = PO_RRT_Star(start, goal, grid, failure_prob_values=[0.1])
-    # plot_paths_metrics(multiple_paths)
-    # plot_full_paths(multiple_paths)
-    plot_paths_summary(filtered_paths, obstacles=obstacles)
-    plot_paths_summary(multiple_paths, obstacles=obstacles)
+    filtered_paths, multiple_paths, tree = PO_RRT_Star(start, goal, grid, sample_count)
     
+    # Default plotting (ask user)
+
+    # plot_final_tree_2d(
+    #     tree=tree,
+    #     filtered_paths=filtered_paths,
+    #     grid=grid,
+    #     obstacles=grid.obstacles,
+    #     max_highlight_paths=10,
+    #     title="PORRT* Final Tree with Pareto Paths"
+    # )
+
+    do_plot = input("Plot filtered paths and all paths? (filtered/all/none) [filtered]: ").strip().lower() or 'filtered'
+    if do_plot in ('filtered', 'both'):
+        try:
+            plot_paths_summary(filtered_paths, obstacles=obstacles)
+        except Exception as e:
+            print(f"Failed to plot filtered paths: {e}")
+    if do_plot in ('all', 'both'):
+        try:
+            plot_paths_summary(multiple_paths, obstacles=obstacles)
+        except Exception as e:
+            print(f"Failed to plot all paths: {e}")
+    
+
+    # Spectral clustering visualization
+    do_spec = input("Open spectral clustering visualization? (y/N): ").strip().lower() == 'y'
+    if do_spec:
+        try:
+            clusters, labels, dbg = spectral_cluster_paths(filtered_paths, n_clusters="auto")
+            print(f"[spectral] chose k={dbg.get('k')} (sklearn={dbg.get('used_sklearn')})")
+            # interactive exploration with sliders for k & weights
+            interactive_spectral_cluster_plot(filtered_paths, spectral_cluster_paths, obstacles=obstacles)
+        except Exception as e:
+            print(f"Spectral visualization failed: {e}")
+
+    # option to save everything for later replay (paths + whole tree)
+    do_save = input("Export run to JSON for replay? (y/N): ").strip().lower() == 'y'
+    if do_save:
+        default_name = f"porrt_export_{int(time.time())}.json"
+        fname = input(f"Output filename [{default_name}]: ").strip()
+        outfile = fname or default_name
+        save_run_json(outfile, start, goal, grid, filtered_paths, multiple_paths, edge_segments)
 
 if __name__ == '__main__':
     main()
