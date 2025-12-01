@@ -15,6 +15,35 @@ def get_coord(node):
     """
     return (node.x, node.y)
 
+def is_edge_collision_free(a, b, grid, num_samples=50, p_threshold=0.9):
+    """
+    Check if the straight edge from node a to node b is collision-free.
+
+    We sample a few points along the segment and treat any cell with
+    grid value >= p_threshold as a collision (hard obstacle).
+    """
+    # Handle Node objects or (x, y) tuples
+    ax, ay = (a.x, a.y) if hasattr(a, "x") else (a[0], a[1])
+    bx, by = (b.x, b.y) if hasattr(b, "x") else (b[0], b[1])
+
+    xs = np.linspace(ax, bx, num_samples + 1)
+    ys = np.linspace(ay, by, num_samples + 1)
+
+    for x, y in zip(xs, ys):
+        x_idx = int(x)
+        y_idx = int(y)
+
+        # Outside grid = collision
+        if not (0 <= x_idx < grid.width and 0 <= y_idx < grid.height):
+            return False
+
+        # Inside hard obstacle = collision
+        if grid.grid[x_idx, y_idx] >= p_threshold:
+            return False
+
+    return True
+
+
 def is_collision_free(node, grid):
     """
     Check if node is inside the grid and not in collision with obstacles.
@@ -23,7 +52,7 @@ def is_collision_free(node, grid):
     return (
         0 <= x_idx < grid.width and
         0 <= y_idx < grid.height and
-        grid.grid[x_idx, y_idx] < 0.3  # 0.3 threshold for collision
+        grid.grid[x_idx, y_idx] < 0.9  # 0.3 threshold for collision
     )
 
 def steer(from_node, to_node, step_size):
@@ -60,19 +89,6 @@ def accumulate_log_survival(parent, child, grid, num_samples=5):
         log_s_step += np.log(1 - np.clip(raw_p, 0.0, 1.0)) * segment_length
 
     return log_s_step
-
-    # for x, y in zip(xs, ys):
-    #     xi = int(x / grid.width * (grid.grid.shape[0] - 1))
-    #     yi = int(y / grid.height * (grid.grid.shape[1] - 1))
-    #     if 0 <= xi < grid.grid.shape[0] and 0 <= yi < grid.grid.shape[1]:
-    #         raw_p = grid.grid[xi, yi]
-    #         p_clip = np.clip(raw_p, 0.0, 1.0)
-    #         if p_clip > 0.0:
-    #             log_s_step += np.log(1 - p_clip)
-
-    # log_s_step *= distance_to(parent, child) / num_samples
-    
-    # return log_s_step
 
 def get_path_signature(node_list):
     return tuple((round(n.x, 2), round(n.y, 2), round(n.theta, 2)) for n in node_list)
