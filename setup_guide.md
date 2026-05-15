@@ -5,7 +5,7 @@ This setup_guide will function as a walkthrough on how to install this framework
 
 [![Run Tests](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml/badge.svg)](https://github.com/K-batonisashvili/PO-RRT-Pareto-Optimal-Path-Planning/actions/workflows/Tests.yml)
 
-[![python](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/)
+[![python](https://img.shields.io/badge/python-3.8-blue.svg)](https://www.python.org/)
 
 ![os](https://img.shields.io/badge/os-ubuntu%20|%20macos%20|%20windows-blue.svg)
 
