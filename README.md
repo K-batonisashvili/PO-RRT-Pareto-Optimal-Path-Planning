@@ -1,32 +1,55 @@
-# PO-RRT*: Pareto Optimal RRT* Path Planning Algorithm
-Main repo for novel RRT* Algorithm which focuses on Pareto-optimized safety definitions Our main code can be found under the `src` folder. Several tests were created for benchmarking and validation under the `tests` folder. You may directly download the python file `PO-RRT_Star.py` and run it locally on your machine, or for an in-depth tutorial, please look through the `setup_guide.md` notebook on overall general instructions, setting up a virtual conda environment, cloning this github repo, running the tests, and finally the main code. 
+# PO-RRT*: Pareto-Optimal RRT* for Multi-Objective Path Planning
 
+![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)
+![NumPy](https://img.shields.io/badge/NumPy-Vectorized-deepgreen.svg)
+![Status](https://img.shields.io/badge/status-active-success.svg)
 
+**PO-RRT*** is a high-performance, multi-objective motion planning algorithm. Traditional RRT* algorithms force competing objectives (e.g., minimizing travel distance vs. navigating risk zones) into a single scalar weight, often missing the true optimal path. This framework abandons scalar weights entirely. Instead, it computes and preserves the **complete set of non-dominated trade-off trajectories (the Pareto frontier)** in real-time, allowing an autonomous agent (or human operator) to dynamically select the best path post-computation.
 
+### Baseline RRT* (Weighted) vs. PO-RRT*
+| Standard RRT* (Scalar Focus) | PO-RRT* (Multi-Objective) |
+| :---: | :---: |
+| ![Baseline-GIF](./tests/5-14-2026/baseline_weighted_rrt.gif) | ![Pareto-GIF](./tests/5-14-2026/porrt_generation.gif) |
+| *Standard RRT\* where the cost is scalarized and both objectives are given specific weight. Not enough weight was given to Risk, thus the algorithm fails to capture alternate safe routes.* | *Explores and preserves the entire Pareto frontier, finding multiple trade-off paths simultaneously.* |
 
+---
 
-# Introduction
+## Key Algorithmic & Architectural Contributions
 
-Multi-objective path planning has been the subject of recent investigation in academia and private research alike. With our nonlinear world providing more obstacles and more variables to take into consideration, new algorithms and proposals are submitted as potential solutions. Unfortunately when working with autonomous agents, safety is often overlooked in favor of efficiency and optimization. To provide more trust in human-robot interaction, an active communication channel between the autonomous agent and human must exist for interchange of data, debate, and agreement. With most state-of-the-art research encompassing risk as a subset of the cost function, the explicit focus on safety is reduced to a weighted part of a whole. In this Github repo, we present a novel algorithm which focuses on separating safety from the overall cost function during autonomous path planning and explicitly calculate it via Pareto-Dominance it at each time step.
+Transitioning this concept from a mathematical theory to a viable software implementaion required solving several severe computational bottlenecks:
 
-## Problem Formulation
-We formulate this idea of co-dependent path selection as a multi-objective problem, where our primary goal lies in explicitly measuring environmental uncertainty, followed by cost minimization. We discretize our given environment with an occupancy grid, where known and unknown areas of our workspace are assigned a probability of being occupied. While the overall environment definition and selection is situational, our agent’s traversal distance is determined by the defined environmental resolution and assigned step size. This travel distance provides the foundation to the overall calculation of path failure and cost. We generate paths using a modified RRT* algorithm which rewires neighboring nodes depending on Pareto dominance. Through this, we are guaranteed to have multiple routes for our agent to choose from to reach a desired location. 
+* **Vectorized Array Architecture:** Transitioned the core graph data structure from a memory-heavy object-cloning model to a vectorized NumPy array architecture. Geometric spatial nodes store multi-objective trajectories internally as matrices, drastically reducing instantiation overhead and memory bloat.
+* **True Lazy-Evaluation Pipeline:** Engineered an on-demand, recursive task queue. Metric propagation and graph rewiring are completely decoupled from geometric exploration. Nodes only synchronize their mathematical states when actively queried by the spatial KD-Tree.
+* **Tensor-Broadcasted Pareto Filtering:** Replaced millions of redundant scalar dominance checks with tensor-broadcasting. Cost matrices are evaluated and pruned in bulk, mathematically strangling dead paths before they can propagate through the network.
+* **Cyclic Graph Resolution:** Solved the complex bidirectional lineage problem inherent to multi-objective spanning trees (where nodes can act as mutual parents for different trade-off paths) by implementing recursion locks to prevent stack overflows.
+* **Optimized Spatial Querying:** Integrated SciPy's `cKDTree` with dynamic radius scaling to maintain rapid nearest-neighbor queries as the configuration space scales to thousands of vertices.
 
+---
 
-## Pareto-Dominance
+## Core Concept: Pareto-Dominance & Safety
 
-Since we are detaching our probability of failure from the overall cost function, our agent takes on an augmented state with additional dimensions. With this detached probability of failure, we are no longer guaranteed to have one optimal path that dominates others. Instead, we perform Pareto dominance checks based on failure and cost. An example plot of what this might look like can be seen in the image below, where our multi-objective problem is split into probability of failure on the Y axis, and our cost function similarly on the X. The dotted lines represent the dominance region that each node (or in our case the nodes represent paths) contains, where if other paths fall within the rectangular region, they will be dominated. This way, there is a "front" that is generated by paths which are low in cost, and low in probability of failure. 
+When working with autonomous agents, safety is often overlooked in favor of efficiency. To provide more trust in human-robot interaction, risk must be explicitly measured, not just bundled into a cost function.
 
+In this environment, known and unknown areas of the workspace are assigned a probability of being occupied (an occupancy grid). Because we detach our **Probability of Failure (`p_fail`)** from the overall **Cost**, our agent takes on an augmented multi-dimensional state. 
+
+We say that a potential path Pareto-dominates another if and only if it is better or equal in all objectives, and strictly better in at least one:
+
+![Pareto-Dominance-EQs](./imgs/Pareto-Dominance-Eqs.PNG)
+
+### The Pareto Front
+By enforcing this dominance check at every node via our array architecture, we generate a "front" of non-dominated paths. 
 
 ![Pareto-Front-Plot](./imgs/Pareto-Optimality.png)
 
+*The dotted lines represent the dominance region. If a newly discovered path falls into the lower-left region (lower cost, lower risk), the older paths are mathematically dominated, pruned from the array, and deleted from the graph.*
 
-We say that a potential path Pareto dominates another if and only if the following conditions are met:
-![Pareto-Dominance-EQs](./imgs/Pareto-Dominance-Eqs.PNG)
+---
 
-Following the logic of 1, we are presented with paths that are either lower in cost but have the same probability of failure, paths that are lower in probability of failure but the same cost, or lower in both. While a Pareto-optimal path dominates certain others, it will never dominate another Pareto-optimal path as the objective conditions are dependent on overall goals. To visualize this, we can look back at 1 where there are certain paths that are may dominate others in cost, but not in their probability of failure. This criterion would allow for the generation of multiple dominant paths that may be transferred to the human counterpart for further analysis based on aforementioned goals.
+## Visual Results & Benchmarking
 
-![Pareto-GIF](./tests/5-14-2026/porrt_generation.gif) ![Baseline-GIF](./tests/5-14-2026/baseline_weighted_rrt.gif)
+The resulting paths offer a distinct choice between the shortest, riskiest path and the longest, safest path—and every mathematically optimal compromise in between.
 
-![Pareto-Front](./tests/5-14-2026/Pareto%20Front%20RNG%2050.png)
-![Angled-View](./tests/5-14-2026/Angled%20View.png)
+| Pareto Front Scatter | Angled View (Distance vs Risk) |
+| :---: | :---: |
+| ![Pareto-Front](./tests/5-14-2026/Pareto%20Front%20RNG%2050.png) | ![Angled-View](./tests/5-14-2026/Angled%20View.png) |
+
