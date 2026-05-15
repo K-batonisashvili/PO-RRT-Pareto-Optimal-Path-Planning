@@ -34,7 +34,7 @@ In this environment, known and unknown areas of the workspace are assigned a pro
 
 We say that a potential path Pareto-dominates another if and only if it is better or equal in all objectives, and strictly better in at least one:
 
-![Pareto-Dominance-EQs](./imgs/Pareto-Dominance-Eqs.PNG)
+![Pareto-Dominance-EQs](./imgs/Pareto-Dominance-Eqs.png)
 
 ### The Pareto Front
 By enforcing this dominance check at every node via our array architecture, we generate a "front" of non-dominated paths. 
