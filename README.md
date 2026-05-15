@@ -26,7 +26,7 @@ We say that a potential path Pareto dominates another if and only if the followi
 
 Following the logic of 1, we are presented with paths that are either lower in cost but have the same probability of failure, paths that are lower in probability of failure but the same cost, or lower in both. While a Pareto-optimal path dominates certain others, it will never dominate another Pareto-optimal path as the objective conditions are dependent on overall goals. To visualize this, we can look back at 1 where there are certain paths that are may dominate others in cost, but not in their probability of failure. This criterion would allow for the generation of multiple dominant paths that may be transferred to the human counterpart for further analysis based on aforementioned goals.
 
-![Pareto-GIF](./tests/5-14-2026/porrt_generation.gif)
-![Baseline-GIF](./tests/5-14-2026/baseline_weighted_rrt.gif)
+![Pareto-GIF](./tests/5-14-2026/porrt_generation.gif) ![Baseline-GIF](./tests/5-14-2026/baseline_weighted_rrt.gif)
+
 ![Pareto-Front](./tests/5-14-2026/Pareto%20Front%20RNG%2050.png)
 ![Angled-View](./tests/5-14-2026/Angled%20View.png)
