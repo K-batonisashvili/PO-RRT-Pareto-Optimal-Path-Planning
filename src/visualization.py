@@ -6,6 +6,70 @@ from matplotlib.widgets import Slider, RadioButtons
 from matplotlib.collections import LineCollection 
 import matplotlib.colors as mcolors
 
+# Utility: derive a consistent color list for a sequence of paths
+def _get_path_colors(paths):
+    """Return a list of RGBA colors for the provided paths using tab10.
+
+    The ordering matches the input `paths` order, which allows consistent
+    coloring across different plots (e.g., Pareto scatter and spatial paths).
+    """
+    n = len(paths) if paths is not None else 0
+    cmap = cm.get_cmap('tab10', max(1, n))
+    return [cmap(i) for i in range(n)]
+
+# Map rectangular obstacle "probability" in [0.01, 1.0] to a yellow→red color.
+# Values near 0.01 map to yellow (darkened for visibility), values near 1.0 map to red.
+def _occupancy_color(prob):
+    """Return an RGBA color for occupancy probability `prob`.
+
+    To improve visibility, the low end of the colormap (near 0.01) is shifted
+    away from very pale yellow toward a darker yellow by applying a minimum
+    `t` offset before sampling the 'YlOrRd' colormap.
+    """
+    cmap = cm.get_cmap('YlOrRd')
+    MIN_T = 0.40  # lower bound for colormap sampling to avoid very pale yellows
+    try:
+        p = float(prob)
+    except Exception:
+        # Fallback to a visible dark-yellow
+        return cmap(MIN_T)
+    # clip to supported range
+    p_clipped = min(max(p, 0.01), 1.0)
+    t = (p_clipped - 0.01) / (1.0 - 0.01)
+    # Shift sampling range upward so the low end is darker/more visible
+    t = MIN_T + (1.0 - MIN_T) * t
+    return cmap(t)
+
+# Helper to reorder legend
+def _reorder_legend(ax):
+    handles, labels = ax.get_legend_handles_labels()
+    # Separate Start/Goal from others
+    sg_pairs = []
+    other_pairs = []
+    
+    for h, l in zip(handles, labels):
+        if l.startswith("Start") or l.startswith("Goal"):
+            sg_pairs.append((h, l))
+        else:
+            other_pairs.append((h, l))
+            
+    # Sort sg_pairs so Start is usually before Goal if desired, or just keep order found
+    # Let's ensure Start comes before Goal if both exist
+    sg_pairs.sort(key=lambda x: x[1], reverse=True) # Start... vs Goal... -> Start comes last alphabetically? No. S > G.
+    # Actually, let's just prioritize "Start" then "Goal"
+    start_pair = [p for p in sg_pairs if p[1].startswith("Start")]
+    goal_pair = [p for p in sg_pairs if p[1].startswith("Goal")]
+    
+    # Combine: Start, Goal, Others
+    final_handles = []
+    final_labels = []
+    
+    for h, l in start_pair + goal_pair + other_pairs:
+        final_handles.append(h)
+        final_labels.append(l)
+        
+    if final_handles:
+        ax.legend(handles=final_handles, labels=final_labels, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=1)
 
 def init_progress_plot_2d(start, goal, x_lim, y_lim, obstacles):
     """
@@ -22,9 +86,14 @@ def init_progress_plot_2d(start, goal, x_lim, y_lim, obstacles):
     ax.set_ylim(y_lim)
     ax.set_aspect('equal', adjustable='box')
 
-    # Plot start and goal
-    ax.scatter(start[0], start[1], c='red', s=60, label='Start')
-    ax.scatter(goal[0], goal[1], c='red', s=80, marker='*', label='Goal')
+    # Plot start and goal (include coordinates in labels)
+    start_coord = (round(start[0], 2), round(start[1], 2))
+    goal_coord = (round(goal[0], 2), round(goal[1], 2))
+    ax.scatter(start[0], start[1], c='red', s=60, label=f'Start {start_coord}')
+    ax.scatter(goal[0], goal[1], c='red', s=80, marker='*', label=f'Goal {goal_coord}')
+
+    # Ensure legend keeps Start/Goal at the top
+    _reorder_legend(ax)
 
     # Plot obstacles (2D)
     if obstacles is not None:
@@ -35,14 +104,18 @@ def init_progress_plot_2d(start, goal, x_lim, y_lim, obstacles):
                 theta = np.linspace(0, 2 * np.pi, 100)
                 x = cx + radius * np.cos(theta)
                 y = cy + radius * np.sin(theta)
-                ax.plot(x, y, linestyle='--', alpha=0.5, color='red')
+                prob = obs.get("probability", 1.0)
+                color = _occupancy_color(prob)
+                ax.plot(x, y, linestyle='--', alpha=0.5, color=color)
             elif obs.get("type") == "rectangular":
                 # x_range / y_range style (matches other parts of the code)
                 x0, x1 = obs["x_range"]
                 y0, y1 = obs["y_range"]
                 xs = [x0, x1, x1, x0, x0]
                 ys = [y0, y0, y1, y1, y0]
-                ax.plot(xs, ys, linestyle='--', alpha=0.5, color='orange')
+                prob = obs.get("probability", None)
+                color = _occupancy_color(prob) if prob is not None else 'orange'
+                ax.plot(xs, ys, linestyle='--', alpha=0.5, color=color)
 
     # Empty line collection for tree edges
     lc = LineCollection([], linewidths=1.0)
@@ -50,7 +123,7 @@ def init_progress_plot_2d(start, goal, x_lim, y_lim, obstacles):
 
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
-    ax.set_title("PORRT* (2D)")
+    ax.set_title("PORRT*")
     ax.grid(True)
     ax.legend(loc="best")
 
@@ -79,11 +152,16 @@ def init_progress_plot_3d(start, goal, x_lim, y_lim, obstacles, z_lim=(0.0, 1.0)
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Probability of Failure')
-    ax.set_title("PORRT* (3D)")
+    ax.set_title("PORRT* with P_fail Dimension")
 
-    # Plot start and goal
-    ax.scatter(start[0], start[1], 0, c='red', s=60, label='Start')
-    ax.scatter(goal[0], goal[1], 0, c='red', s=80, label='Goal')
+    # Plot start and goal (include coordinates in labels)
+    start_coord = (round(start[0], 2), round(start[1], 2))
+    goal_coord = (round(goal[0], 2), round(goal[1], 2))
+    ax.scatter(start[0], start[1], 0, c='red', s=60, label=f'Start {start_coord}')
+    ax.scatter(goal[0], goal[1], 0, c='red', s=80, label=f'Goal {goal_coord}')
+
+    # Ensure legend keeps Start/Goal at the top
+    _reorder_legend(ax)
 
     # Plot obstacles
     if obstacles is not None:
@@ -95,14 +173,18 @@ def init_progress_plot_3d(start, goal, x_lim, y_lim, obstacles, z_lim=(0.0, 1.0)
                 x = cx + radius * np.cos(theta)
                 y = cy + radius * np.sin(theta)
                 z = np.zeros_like(x)
-                ax.plot(x, y, z, color='red', alpha=0.7)
+                prob = obs.get("probability", 1.0)
+                color = _occupancy_color(prob)
+                ax.plot(x, y, z, color=color, alpha=0.7)
             elif obs.get("type") == "rectangular":
                 x0, x1 = obs["x_range"]
                 y0, y1 = obs["y_range"]
                 x_bounds = [x0, x1, x1, x0, x0]
                 y_bounds = [y0, y0, y1, y1, y0]
                 z = np.zeros_like(x_bounds)
-                ax.plot_trisurf(x_bounds, y_bounds, z, color='orange', alpha=0.3)
+                prob = obs.get("probability", None)
+                color = _occupancy_color(prob) if prob is not None else 'orange'
+                ax.plot_trisurf(x_bounds, y_bounds, z, color=color, alpha=0.3)
 
     ax.legend()
 
@@ -192,11 +274,16 @@ def plot_full_paths(paths):
 def plot_paths_summary(paths, obstacles=None):
     """
     Show cost vs. failure probability and full path(s) from start to goal side by side.
-    Only the top 10 paths with the least cost are shown.
-    Each path is given a unique color in both plots.
-    Optionally plots obstacles on the right plot if obstacles is provided.
+    Ensures colors are CONSISTENT with the original 'paths' list order.
     """
-    # Sort by p_fail (increasing)
+    # 1. Generate consistent colors based on the ORIGINAL list order
+    all_colors = _get_path_colors(paths)
+    
+    # Map specific path objects to their assigned color using object ID
+    # This ensures that even after sorting, we use the original color.
+    path_to_color = {id(entry["path"]): col for entry, col in zip(paths, all_colors)}
+    
+    # 2. Sort by p_fail (increasing) for the summary logic
     if len(paths) <= 15:
         top_paths = sorted(paths, key=lambda entry: entry["p_fail"])[:10]
         show_legend = True
@@ -206,22 +293,27 @@ def plot_paths_summary(paths, obstacles=None):
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
-    # --- Assign a unique color to each path ---
-    colors = cm.get_cmap('tab10', len(top_paths))
-
     # --- Left: Cost vs. Failure Probability ---
     for idx, entry in enumerate(top_paths):
         cost = entry["cost"]
         pfail = entry["p_fail"]
-        ax1.scatter(cost, pfail, color=colors(idx), marker='o', s=100,
-                    label=f'Path {idx+1}')
-    ax1.set_xlabel('Total Cost')
+        
+        # Retrieve the consistent color
+        color = path_to_color[id(entry["path"])]
+        
+        # We label it based on its original index if possible, or just "Path idx" from the sorted list
+        # If you want the label to match the original index, you'd need to find it.
+        # For now, we label based on the sorted rank (1st safest, 2nd safest...) 
+        # but keep the color consistent with other plots.
+        ax1.scatter(cost, pfail, color=color, marker='o', s=100, label=f'Path {idx+1}')
+        
+    ax1.set_xlabel('Euclidean Distance')
     ax1.set_ylabel('Failure Probability')
-    ax1.set_title('Cost vs. Failure Probability (Top 10)')
+    ax1.set_title('Euclidean Distance vs. Failure Probability')
     ax1.grid(True)
-    ncol = min(2, len(top_paths))
+    
     if show_legend:
-        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
+        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=1)
 
     # --- Right: Plot Obstacles if provided ---
     if obstacles is not None:
@@ -232,13 +324,17 @@ def plot_paths_summary(paths, obstacles=None):
                 theta = np.linspace(0, 2 * np.pi, 100)
                 x = cx + radius * np.cos(theta)
                 y = cy + radius * np.sin(theta)
-                ax2.plot(x, y, color='red', alpha=0.7)
+                prob = obs.get("probability", 1.0)
+                color = _occupancy_color(prob)
+                ax2.plot(x, y, color=color, alpha=0.7)
             elif obs["type"] == "rectangular":
                 x0, x1 = obs["x_range"]
                 y0, y1 = obs["y_range"]
                 x_bounds = [x0, x1, x1, x0, x0]
                 y_bounds = [y0, y0, y1, y1, y0]
-                ax2.plot(x_bounds, y_bounds, color='orange', alpha=0.7)
+                prob = obs.get("probability", None)
+                color = _occupancy_color(prob) if prob is not None else 'orange'
+                ax2.plot(x_bounds, y_bounds, color=color, alpha=0.7)
 
     # --- Right: Full Paths ---
     for idx, entry in enumerate(top_paths):
@@ -246,16 +342,26 @@ def plot_paths_summary(paths, obstacles=None):
         nodes = path.nodes if hasattr(path, "nodes") else path
         xs = [node.x for node in nodes]
         ys = [node.y for node in nodes]
-        ax2.plot(xs, ys, marker='o', color=colors(idx),
-                 label=f'Path {idx+1}\n(cost={entry["cost"]:.6f}, p_fail={entry["p_fail"]:.6f})')
-        ax2.scatter(xs[0], ys[0], c='green', s=50, label='Start' if idx == 0 else "")
-        ax2.scatter(xs[-1], ys[-1], c='blue', s=50, label='Goal' if idx == 0 else "")
+        
+        # Retrieve the consistent color
+        color = path_to_color[id(entry["path"])]
+        
+        ax2.plot(xs, ys, marker='o', color=color,
+                 label=f'Path {idx+1}\n(Dist.={entry["cost"]:.6f}, P_fail={entry["p_fail"]:.6f})')
+        
+        if idx == 0:
+            start_coord = (round(xs[0], 2), round(ys[0], 2))
+            goal_coord = (round(xs[-1], 2), round(ys[-1], 2))
+            ax2.scatter(xs[0], ys[0], c='green', s=50, label=f'Start {start_coord}')
+            ax2.scatter(xs[-1], ys[-1], c='blue', s=50, label=f'Goal {goal_coord}')
+
     ax2.set_xlabel('X')
     ax2.set_ylabel('Y')
-    ax2.set_title('Full Paths from Start to Goal (Top 10)')
+    ax2.set_title('Full Paths from Start to Goal')
     ax2.grid(True)
+    
     if show_legend:
-        ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., ncol=ncol)
+        _reorder_legend(ax2)
 
     plt.tight_layout()
     plt.show(block=True)
@@ -289,19 +395,26 @@ def redraw_tree_2d(tree, lc, edge_segments, highlighted_paths=None):
                 p = p.get("path", p)
             completed_paths.append(p)
 
-    # --- 3) Build green segments from highlighted paths ---
-    edge_segments.clear()  # reuse this list as "green segments only"
-    for path in completed_paths:
+    # --- 3) Build highlighted segments from highlighted paths ---
+    edge_segments.clear()  # reuse this list as "highlighted segments only"
+    highlight_colors = []
+
+    # construct a color palette matching the highlighted_paths order
+    path_colors = _get_path_colors(completed_paths) if completed_paths else []
+
+    for p_idx, path in enumerate(completed_paths):
         nodes = path.nodes if hasattr(path, "nodes") else path
+        col = path_colors[p_idx] if p_idx < len(path_colors) else 'green'
         for i in range(1, len(nodes)):
             n1, n2 = nodes[i - 1], nodes[i]
             seg = [(n1.x, n1.y), (n2.x, n2.y)]
             if seg not in edge_segments:
                 edge_segments.append(seg)
+                highlight_colors.append(col)
 
     # --- 4) Combine & draw ---
     all_segments = gray_segments + edge_segments
-    colors = ['gray'] * len(gray_segments) + ['green'] * len(edge_segments)
+    colors = ['gray'] * len(gray_segments) + highlight_colors
 
     linewidths = [0.8] * len(gray_segments) + [2.5] * len(edge_segments)
 
@@ -319,6 +432,19 @@ def redraw_tree(tree, lc, edge_segments, highlighted_paths=None):
       - Gray for all tree edges (exploration) from parent→child
       - Green for selected complete paths (by default: all complete paths)
     """
+
+    def _chain_from_node_via_parents(node):
+        """Return [start ... node] by following .parent pointers."""
+        chain = []
+        cur = node
+        while cur is not None:
+            chain.append(cur)
+            cur = getattr(cur, "parent", None)
+        chain.reverse()
+        return chain
+
+
+
     # --- 1) Build gray segments from the true tree structure ---
     gray_segments = []
 
@@ -332,36 +458,42 @@ def redraw_tree(tree, lc, edge_segments, highlighted_paths=None):
         ]
         gray_segments.append(seg)
 
-    # --- 2) Decide which paths to highlight in green ---
+        # --- 2) Decide which goal nodes to highlight in green ---
     if highlighted_paths is None:
-        completed_paths = [
-            p for p in getattr(tree, "paths", [])
-            if hasattr(p, "is_complete") and p.is_complete
-        ]
+        goal_nodes = [n for n in getattr(tree, "node_list", [])
+                      if getattr(n, "is_goal", False)]
     else:
-        # highlighted_paths may be Path objects or dicts {"path": Path, ...}
-        completed_paths = []
+        goal_nodes = []
         for p in highlighted_paths:
             if isinstance(p, dict):
                 p = p.get("path", p)
-            completed_paths.append(p)
+            nodes = p.nodes if hasattr(p, "nodes") else p
+            if nodes:
+                goal_nodes.append(nodes[-1])  # last node = goal
 
-    # --- 3) Build green segments from highlighted paths ---
-    edge_segments.clear()  # reuse this list as "green segments only"
-    for path in completed_paths:
-        nodes = path.nodes if hasattr(path, "nodes") else path
-        for i in range(1, len(nodes)):
-            n1, n2 = nodes[i - 1], nodes[i]
+    # --- 3) Build green segments from parent pointers (rewire-safe) ---
+    edge_segments.clear()  # reuse this list as "highlighted segments only"
+
+    # color palette for goal/highlighted paths
+    path_colors = _get_path_colors(goal_nodes) if goal_nodes else []
+    highlight_colors = []
+
+    for g_idx, g in enumerate(goal_nodes):
+        chain = _chain_from_node_via_parents(g)
+        col = path_colors[g_idx] if g_idx < len(path_colors) else 'green'
+        for i in range(1, len(chain)):
+            n1, n2 = chain[i - 1], chain[i]
             seg = [
-                (n1.x, n1.y, n1.p_fail),
-                (n2.x, n2.y, n2.p_fail),
+                (n1.x, n1.y, getattr(n1, "p_fail", 0.0)),
+                (n2.x, n2.y, getattr(n2, "p_fail", 0.0)),
             ]
             if seg not in edge_segments:
                 edge_segments.append(seg)
+                highlight_colors.append(col)
 
     # --- 4) Combine & draw ---
     all_segments = gray_segments + edge_segments
-    colors = ['gray'] * len(gray_segments) + ['green'] * len(edge_segments)
+    colors = ['gray'] * len(gray_segments) + highlight_colors
 
     linewidths = [0.8] * len(gray_segments) + [2.5] * len(edge_segments)
 
@@ -419,9 +551,9 @@ def interactive_cluster_plot(paths, cluster_func, obstacles=None):
             pfails = [e['p_fail'] for e in paths]
             ax1.scatter(costs, pfails, color='gray')
 
-        ax1.set_xlabel('Total Cost')
+        ax1.set_xlabel('Euclidean Distance')
         ax1.set_ylabel('Failure Probability')
-        ax1.set_title('Cost vs Failure Probability (cluster reps)')
+        ax1.set_title('Euclidean Distance vs Failure Probability')
         ax1.grid(True)
 
         # Right: spatial plot of paths colored by cluster
@@ -456,17 +588,21 @@ def interactive_cluster_plot(paths, cluster_func, obstacles=None):
                     theta = np.linspace(0, 2*np.pi, 100)
                     x = cx + radius * np.cos(theta)
                     y = cy + radius * np.sin(theta)
-                    ax2.plot(x, y, color='red', alpha=0.6)
+                    prob = obs.get('probability', 1.0)
+                    color = _occupancy_color(prob)
+                    ax2.plot(x, y, color=color, alpha=0.6)
                 elif obs['type'] == 'rectangular':
                     x0, x1 = obs['x_range']
                     y0, y1 = obs['y_range']
                     x_bounds = [x0, x1, x1, x0, x0]
                     y_bounds = [y0, y0, y1, y1, y0]
-                    ax2.plot(x_bounds, y_bounds, color='orange', alpha=0.6)
+                    prob = obs.get('probability', None)
+                    color = _occupancy_color(prob) if prob is not None else 'orange'
+                    ax2.plot(x_bounds, y_bounds, color=color, alpha=0.6)
 
         ax2.set_xlabel('X')
         ax2.set_ylabel('Y')
-        ax2.set_title('Spatial Paths (colored by cluster)')
+        ax2.set_title('Spatial Paths')
         ax2.grid(True)
 
         fig.canvas.draw_idle()
@@ -542,8 +678,8 @@ def interactive_spectral_cluster_plot(paths, spectral_cluster_func, obstacles=No
             pfails = [e['p_fail'] for e in paths]
             ax1.scatter(costs, pfails, color='gray')
 
-        ax1.set_xlabel('Total Cost'); ax1.set_ylabel('Failure Probability')
-        ax1.set_title('Spectral clusters (representatives)')
+        ax1.set_xlabel('Euclidean Distance'); ax1.set_ylabel('Failure Probability')
+        ax1.set_title('Spectral clusters')
         ax1.grid(True)
 
         # Right: spatial plot colored by cluster
@@ -573,11 +709,15 @@ def interactive_spectral_cluster_plot(paths, spectral_cluster_func, obstacles=No
                     cx, cy = obs['center']; r = obs['radius']
                     th = np.linspace(0, 2*np.pi, 100)
                     x = cx + r*np.cos(th); y = cy + r*np.sin(th)
-                    ax2.plot(x, y, color='red', alpha=0.6)
+                    prob = obs.get('probability', 1.0)
+                    color = _occupancy_color(prob)
+                    ax2.plot(x, y, color=color, alpha=0.6)
                 elif obs.get('type') == 'rectangular':
                     x0, x1 = obs['x_range']; y0, y1 = obs['y_range']
                     xb = [x0, x1, x1, x0, x0]; yb = [y0, y0, y1, y1, y0]
-                    ax2.plot(xb, yb, color='orange', alpha=0.6)
+                    prob = obs.get('probability', None)
+                    color = _occupancy_color(prob) if prob is not None else 'orange'
+                    ax2.plot(xb, yb, color=color, alpha=0.6)
 
         ax2.set_xlabel('X'); ax2.set_ylabel('Y')
         ax2.set_title('Paths colored by spectral cluster')
@@ -597,29 +737,11 @@ def plot_final_tree_2d(tree,
                        grid=None,
                        obstacles=None,
                        max_highlight_paths=10,
-                       title="PORRT* Final Tree (2D)"):
+                       title="PORRT* Tree"):
     """
     Static 2D visualization of the final RRT* tree.
-
-    - Draws ALL tree edges in a colormap based on p_fail.
-    - Overlays filtered (Pareto) paths in thick, bright lines.
-    - Optionally plots obstacles and start/goal.
-
-    Parameters
-    ----------
-    tree : Tree
-        Your RRT* Tree instance (with tree.paths and Node.x/y/p_fail).
-    filtered_paths : list[dict] | None
-        Entries like {"path": Path, "cost": float, "p_fail": float}.
-    grid : Grid | None
-        Used for x/y limits and obstacles. If None, tries tree.grid.
-    obstacles : list | None
-        Optional explicit obstacles list (overrides grid.obstacles).
-    max_highlight_paths : int
-        Max number of filtered paths to overlay.
-    title : str
-        Plot title.
     """
+    # ... [Keep tree/grid inference and edge collection logic unchanged] ...
     # Try to infer grid & obstacles from the tree if not provided
     if grid is None:
         grid = getattr(tree, "grid", None)
@@ -628,45 +750,35 @@ def plot_final_tree_2d(tree,
         obstacles = getattr(grid, "obstacles", None)
 
     # --- Collect all unique edges from the tree ---
-
-    segments = []   # list of [(x1,y1), (x2,y2)]
-    pfails   = []   # one scalar per edge (we'll use child.p_fail)
-    seen     = set()
-
-    segments = []   # list of [(x1,y1), (x2,y2)]
-    pfails   = []   # one scalar per edge (we'll use child.p_fail)
+    segments = []
+    pfails   = []
     seen     = set()
 
     for child in tree.node_list:
         parent = getattr(child, "parent", None)
         if parent is None:
             continue
-
         key = (round(parent.x, 4), round(parent.y, 4),
                round(child.x, 4),  round(child.y, 4))
         if key in seen:
             continue
         seen.add(key)
-
         segments.append([(parent.x, parent.y), (child.x, child.y)])
         pfails.append(float(getattr(child, "p_fail", 0.0)))
 
     # --- Set up figure & axes ---
-
     fig, ax = plt.subplots(figsize=(7, 7))
 
     if grid is not None:
         ax.set_xlim(0, grid.width)
         ax.set_ylim(0, grid.height)
     ax.set_aspect("equal", adjustable="box")
-
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_title(title)
     ax.grid(True, alpha=0.3)
 
     # --- Obstacles in 2D (if any) ---
-
     if obstacles is not None:
         for obs in obstacles:
             t = obs.get("type")
@@ -676,15 +788,18 @@ def plot_final_tree_2d(tree,
                 theta = np.linspace(0, 2 * np.pi, 100)
                 x = cx + radius * np.cos(theta)
                 y = cy + radius * np.sin(theta)
-                ax.plot(x, y, linestyle="--", alpha=0.6, color="red")
+                prob = obs.get("probability", 1.0)
+                color = _occupancy_color(prob)
+                ax.plot(x, y, linestyle="--", alpha=0.6, color=color)
             elif t == "rectangular":
                 x0, x1 = obs["x_range"]
                 y0, y1 = obs["y_range"]
                 xs = [x0, x1, x1, x0, x0]
                 ys = [y0, y0, y1, y1, y0]
-                ax.plot(xs, ys, linestyle="--", alpha=0.6, color="orange")
+                prob = obs.get("probability", None)
+                color = _occupancy_color(prob) if prob is not None else 'orange'
+                ax.plot(xs, ys, linestyle="--", alpha=0.6, color=color)
             elif t == "rect":
-                # in case you ever use bottom_left / top_right format
                 x1, y1 = obs["bottom_left"]
                 x2, y2 = obs["top_right"]
                 xs = [x1, x2, x2, x1, x1]
@@ -692,12 +807,10 @@ def plot_final_tree_2d(tree,
                 ax.plot(xs, ys, linestyle="--", alpha=0.6, color="orange")
 
     # --- Draw tree edges colored by p_fail ---
-
     if segments:
         if any(np.isfinite(p) for p in pfails):
             vmin = min(pfails)
             vmax = max(pfails)
-            # avoid vmin == vmax which breaks Normalize
             if abs(vmax - vmin) < 1e-9:
                 vmin, vmax = 0.0, max(1e-6, vmax)
             norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
@@ -707,22 +820,17 @@ def plot_final_tree_2d(tree,
             cbar = fig.colorbar(lc, ax=ax)
             cbar.set_label("p_fail")
         else:
-            # fallback: plain gray tree
             lc = LineCollection(segments, colors="gray", linewidths=0.8, alpha=0.7)
             ax.add_collection(lc)
 
     # --- Overlay filtered Pareto-optimal paths ---
-
     if filtered_paths:
-        # Sort by cost (or any metric) and take a few
         sorted_paths = sorted(filtered_paths, key=lambda e: e["cost"])
         for idx, entry in enumerate(sorted_paths[:max_highlight_paths]):
             path = entry["path"]
             nodes = path.nodes if hasattr(path, "nodes") else path
             xs = [n.x for n in nodes]
             ys = [n.y for n in nodes]
-
-            # Use a colormap but thicker lines
             color = cm.tab10(idx % 10)
             ax.plot(xs, ys,
                     color=color,
@@ -731,10 +839,8 @@ def plot_final_tree_2d(tree,
                     label=f"Pareto {idx+1}: cost={entry['cost']:.2f}, p_fail={entry['p_fail']:.3f}")
 
     # --- Mark start & goal if we can infer them ---
-
     start_node = None
     goal_node  = None
-    # Try to find marked start/goal in the tree nodes
     for n in getattr(tree, "node_list", []):
         if getattr(n, "is_start", False):
             start_node = n
@@ -742,15 +848,113 @@ def plot_final_tree_2d(tree,
             goal_node = n
 
     if start_node is not None:
-        ax.scatter(start_node.x, start_node.y, c="green", s=80, marker="o", label="Start")
+        start_coord = (round(start_node.x, 2), round(start_node.y, 2))
+        ax.scatter(start_node.x, start_node.y, c="green", s=80, marker="o", label=f"Start {start_coord}")
 
     if goal_node is not None:
-        ax.scatter(goal_node.x, goal_node.y, c="red", s=80, marker="*", label="Goal")
+        goal_coord = (round(goal_node.x, 2), round(goal_node.y, 2))
+        ax.scatter(goal_node.x, goal_node.y, c="red", s=80, marker="*", label=f"Goal {goal_coord}")
 
-    # If we added any labels for filtered paths or start/goal, show legend
     if (filtered_paths and len(filtered_paths) > 0) or start_node or goal_node:
-        ax.legend(loc="best")
+        _reorder_legend(ax)
 
     plt.tight_layout()
     plt.show(block=True)
 
+def plot_tree_2d_basic(
+    tree=None,
+    nodes=None,
+    grid=None,
+    obstacles=None,
+    title="RRT* Tree",
+    edge_color="0.6",
+    edge_lw=0.6,
+    edge_alpha=0.7,
+):
+    """
+    Basic static 2D visualization of an RRT* tree:
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+
+    # ... [Keep node/grid/segment resolution unchanged] ...
+    if nodes is None and tree is not None:
+        nodes = getattr(tree, "node_list", None)
+    if nodes is None:
+        raise ValueError("plot_tree_2d_basic: provide either tree=... or nodes=[...]")
+
+    if grid is None and tree is not None:
+        grid = getattr(tree, "grid", None)
+    if obstacles is None and grid is not None:
+        obstacles = getattr(grid, "obstacles", None)
+
+    segments = []
+    seen = set()
+    start_node = None
+    goal_node = None
+
+    for child in nodes:
+        if getattr(child, "is_start", False):
+            start_node = child
+        if getattr(child, "is_goal", False):
+            goal_node = child
+        parent = getattr(child, "parent", None)
+        if parent is None:
+            continue
+        key = (round(parent.x, 4), round(parent.y, 4),
+               round(child.x, 4),  round(child.y, 4))
+        if key in seen:
+            continue
+        seen.add(key)
+        segments.append([(parent.x, parent.y), (child.x, child.y)])
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    if grid is not None:
+        ax.set_xlim(0, grid.width)
+        ax.set_ylim(0, grid.height)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_title(title)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.grid(True)
+
+    # Obstacles
+    if obstacles is not None:
+        for obs in obstacles:
+            if obs.get("type") == "circular":
+                cx, cy = obs["center"]
+                r = obs["radius"]
+                theta = np.linspace(0, 2*np.pi, 200)
+                prob = obs.get("probability", 1.0)
+                color = _occupancy_color(prob)
+                ax.plot(cx + r*np.cos(theta), cy + r*np.sin(theta),
+                        linestyle="--", alpha=0.6, color=color)
+            elif obs.get("type") == "rectangular":
+                x0, x1 = obs["x_range"]
+                y0, y1 = obs["y_range"]
+                xs = [x0, x1, x1, x0, x0]
+                ys = [y0, y0, y1, y1, y0]
+                prob = obs.get("probability", None)
+                color = _occupancy_color(prob) if prob is not None else 'orange'
+                ax.plot(xs, ys, linestyle="--", alpha=0.6, color=color)
+
+    # Tree edges
+    if segments:
+        lc = LineCollection(segments, colors=edge_color, linewidths=edge_lw, alpha=edge_alpha)
+        ax.add_collection(lc)
+
+    # Start/goal markers
+    if start_node is not None:
+        start_coord = (round(start_node.x, 2), round(start_node.y, 2))
+        ax.scatter(start_node.x, start_node.y, c="green", s=80, marker="o", label=f"Start {start_coord}")
+    if goal_node is not None:
+        goal_coord = (round(goal_node.x, 2), round(goal_node.y, 2))
+        ax.scatter(goal_node.x, goal_node.y, c="red", s=80, marker="*", label=f"Goal {goal_coord}")
+
+    if start_node is not None or goal_node is not None:
+        _reorder_legend(ax)
+
+    plt.tight_layout()
+    plt.show(block=True)

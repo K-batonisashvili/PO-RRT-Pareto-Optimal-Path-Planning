@@ -1,5 +1,0 @@
-matplotlib
-numpy
-pytest
-pytest-cov
-scipy

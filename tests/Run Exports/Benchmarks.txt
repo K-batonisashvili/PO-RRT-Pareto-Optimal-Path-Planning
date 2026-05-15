@@ -1,0 +1,133 @@
+PO-RRT*: Pareto-Optimal, Safety-Aware Multi-Objective Path Planning
+PO-RRT*: A Pareto-Optimal, Safety-Aware Framework for Multi-Objective Path Planning
+PO-RRT*: MULTI-OBJECTIVE PATH PLANNING FRAMEWORK BASED ON PARETO-OPTIMIZED SAFETY 
+=== Summary ===
+ 1000 samples ->   4.973 s,   3851 nodes,   3 complete paths
+ 1500 samples ->  13.421 s,   8261 nodes,   3 complete paths
+ 2000 samples ->  15.002 s,   7722 nodes,   3 complete paths
+ 2500 samples ->  19.532 s,   8541 nodes,   1 complete paths
+ 3000 samples ->  28.306 s,  11255 nodes,   1 complete paths
+ 3500 samples ->  62.717 s,  20628 nodes,   3 complete paths
+ 4000 samples ->  54.752 s,  17346 nodes,   3 complete paths
+ 4500 samples -> 192.802 s,  53481 nodes,   6 complete paths
+
+
+ Iters |   Nodes | Rewires |  ParentChg |  AltBranches |  AltNodes | Safe!=Short
+--------------------------------------------------------------------------------
+   500 |    1727 |    1297 |        211 |         1086 |      1086 |         103
+  1000 |    4062 |    3129 |        495 |         2634 |      2634 |         226
+  1500 |   13221 |   10949 |        692 |        10257 |     10257 |         534
+  2000 |   23973 |   19924 |        827 |        19097 |     19097 |         685
+  2500 |   22586 |   18125 |       1133 |        16992 |     16992 |        1158
+  3000 |   22005 |   17737 |       1401 |        16336 |     16336 |         843
+  3500 |   43833 |   37398 |       1902 |        35496 |     35496 |        1315
+  4000 |   71005 |   61013 |       1980 |        59033 |     59033 |        1802
+
+
+------------------------------------------------------------------------------------
+
+
+Filtered unique paths (cost, p_fail):
+  cost=118.881094, p_fail=0.75508053
+  cost=120.805447, p_fail=0.72862108
+  cost=127.933391, p_fail=0.13130777
+  cost=126.961672, p_fail=0.72406666
+  Nodes in tree:              3736
+  States visited:             727
+  Mean |V(x)| (value set):    3.138
+  Max  |V(x)| over states:    55
+  # Pareto-optimal goal paths 4
+  
+  Filtered unique paths (cost, p_fail):
+  cost=117.289290, p_fail=0.69055516
+  cost=121.927154, p_fail=0.32265235
+  cost=128.073982, p_fail=0.00000000
+  cost=113.915214, p_fail=0.99999970
+  cost=118.735791, p_fail=0.68471081
+  cost=114.964938, p_fail=0.70730894
+  cost=126.951291, p_fail=0.30090128
+  cost=119.866058, p_fail=0.34247505
+  cost=119.856261, p_fail=0.37885687
+  Nodes in tree:              15773
+  States visited:             1423
+  Mean |V(x)| (value set):    7.737
+  Max  |V(x)| over states:    205
+  # Pareto-optimal goal paths 9
+  
+  Filtered unique paths (cost, p_fail):
+  cost=121.659575, p_fail=0.00000000
+  cost=116.456792, p_fail=0.49432536
+  cost=113.817421, p_fail=0.66368446
+  cost=121.087065, p_fail=0.13084474
+  cost=121.335745, p_fail=0.10621955
+  cost=121.362810, p_fail=0.08851697
+  cost=120.250572, p_fail=0.13424330
+  cost=112.420233, p_fail=0.68865095
+  cost=118.746818, p_fail=0.32610014
+  cost=112.438287, p_fail=0.67168601
+  Nodes in tree:              28158
+  States visited:             2045
+  Mean |V(x)| (value set):    8.733
+  Max  |V(x)| over states:    291
+  # Pareto-optimal goal paths 10
+  
+  
+  Filtered unique paths (cost, p_fail):
+  cost=113.959912, p_fail=0.53375011
+  cost=113.021926, p_fail=0.54007309
+  cost=116.365234, p_fail=0.39797052
+  cost=112.539231, p_fail=0.69240316
+  cost=112.529591, p_fail=0.70046066
+  cost=114.051088, p_fail=0.41498841
+  cost=117.190504, p_fail=0.34022546
+  cost=117.820252, p_fail=0.00000000
+  Nodes in tree:              38267
+  States visited:             2607
+  Mean |V(x)| (value set):    8.719
+  Max  |V(x)| over states:    435
+  # Pareto-optimal goal paths 8
+  
+  Filtered unique paths (cost, p_fail):
+  cost=119.077734, p_fail=0.00000000
+  cost=118.795268, p_fail=0.06918020
+  cost=116.474018, p_fail=0.30331723
+  cost=114.663066, p_fail=0.50746514
+  cost=116.459811, p_fail=0.37147571
+  cost=113.724010, p_fail=0.55277929
+  cost=111.107423, p_fail=0.69616209
+  cost=113.717367, p_fail=0.55628080
+  cost=113.012293, p_fail=0.64279685
+  cost=115.232270, p_fail=0.40165134
+  cost=114.850738, p_fail=0.49337796
+  cost=116.324332, p_fail=0.38185979
+  cost=115.610257, p_fail=0.38220129
+  cost=115.062998, p_fail=0.41828908
+  cost=115.392041, p_fail=0.39787155
+  cost=116.951558, p_fail=0.28885088
+  cost=115.418633, p_fail=0.39187729
+  cost=114.816945, p_fail=0.49919109
+  cost=115.576463, p_fail=0.38929009
+  cost=112.181077, p_fail=0.68511130
+  cost=115.198477, p_fail=0.40851697
+  cost=110.222926, p_fail=1.00000000
+  cost=111.693767, p_fail=0.69415856
+  cost=112.777965, p_fail=0.66085824
+  cost=113.414965, p_fail=0.57310649
+  cost=113.018936, p_fail=0.63997805
+  cost=112.066456, p_fail=0.69070154
+  cost=112.664902, p_fail=0.66944888
+  cost=117.058085, p_fail=0.12599391
+  cost=113.408322, p_fail=0.57644886
+  Nodes in tree:              91595
+  States visited:             3109
+  Mean |V(x)| (value set):    19.592
+  Max  |V(x)| over states:    903
+  # Pareto-optimal goal paths 30
+  
+  === Summary over all runs ===
+samples   nodes   states   mean|V(x)|   max|V(x)|   goal_nondom
+   1000    3736      727      3.138         55            4
+   2000   15773     1423      7.737        205            9
+   3000   28158     2045      8.733        291           10
+   4000   38267     2607      8.719        435            8
+   5000   91595     3109     19.592        903           30

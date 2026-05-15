@@ -1,0 +1,86 @@
+
+========================================================================
+EXPERIMENT SUMMARY REPORT
+========================================================================
+Total samples per run (max_iter): 3000
+step_size = 5
+
+[PO-RRT*]
+  # Pareto-optimal goal paths: 3
+  cost range:   [119.422, 127.195]
+  p_fail range: [0.696048, 1.000000]
+  best distance path:
+    cost=119.422, p_fail=1.000000
+  safest path:
+    cost=127.195, p_fail=0.696048
+
+[Naive scalar RRT* baselines]
+
+  Baseline: distance_only
+    mode      : distance
+    alpha     : 0.0
+    status    : OK
+    num_nodes : 2655
+    cost      : 105.560
+    p_fail    : 1.000000
+    scalar    : 105.559853
+    vs PO-RRT*: non_dominated
+
+  Baseline: risk_only
+    mode      : risk
+    alpha     : 0.0
+    status    : OK
+    num_nodes : 2655
+    cost      : 143.853
+    p_fail    : 0.000000
+    scalar    : 0.000000
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_0
+    mode      : weighted
+    alpha     : 4.0
+    status    : OK
+    num_nodes : 2655
+    cost      : 108.680
+    p_fail    : 0.670119
+    scalar    : 111.360352
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_5
+    mode      : weighted
+    alpha     : 8.0
+    status    : OK
+    num_nodes : 2655
+    cost      : 108.680
+    p_fail    : 0.670119
+    scalar    : 114.040828
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_10
+    mode      : weighted
+    alpha     : 12.0
+    status    : OK
+    num_nodes : 2655
+    cost      : 116.180
+    p_fail    : 0.000000
+    scalar    : 116.180468
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_25
+    mode      : weighted
+    alpha     : 16.0
+    status    : OK
+    num_nodes : 2655
+    cost      : 116.180
+    p_fail    : 0.000000
+    scalar    : 116.180468
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_50
+    mode      : weighted
+    alpha     : 20.0
+    status    : OK
+    num_nodes : 2655
+    cost      : 116.180
+    p_fail    : 0.000000
+    scalar    : 116.180468

@@ -1,12 +1,12 @@
 import json
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
-from PO_RRT_Star import spectral_cluster_paths
-from visualization import plot_paths_summary, init_progress_plot_3d, interactive_spectral_cluster_plot
+from PO_RRT_Star_EXACT import spectral_cluster_paths
+from visualization import plot_paths_summary, init_progress_plot_3d, interactive_spectral_cluster_plot, plot_paths_metrics
 
 @dataclass
 class RNode:
-    x: float; y: float; theta: float; cost: float; p_fail: float
+    x: float; y: float; cost: float; p_fail: float
 
 class RPath:
     def __init__(self, nodes): self.nodes = nodes
@@ -26,17 +26,27 @@ def show_paths(json_file, which="filtered"):
     data = json.load(open(json_file))
     entries = load_paths_entries(data["paths"][which])
 
-    # First: show summary (unchanged)
+    # First: show summary (Pareto front left, Spatial paths right)
     plot_paths_summary(entries, obstacles=data.get("obstacles"))
 
     # Optional: interactive clustering prompt
-    do_spec = input("Open spectral clustering viewer? (y/N): ").strip().lower() == 'y'
-    if do_spec:
-        interactive_spectral_cluster_plot(
-            entries,
-            spectral_cluster_paths,
-            obstacles=data.get("obstacles")
-        )
+    # do_spec = input("Open spectral clustering viewer? (y/N): ").strip().lower() == 'y'
+    # if do_spec:
+    #     interactive_spectral_cluster_plot(
+    #         entries,
+    #         spectral_cluster_paths,
+    #         obstacles=data.get("obstacles")
+    #     )
+
+def show_pareto(json_file, which="filtered"):
+    """
+    Shows only the Pareto front (Cost vs Failure Probability scatter plot).
+    """
+    data = json.load(open(json_file))
+    entries = load_paths_entries(data["paths"][which])
+    
+    # Uses the existing plot_paths_metrics function from visualization.py
+    plot_paths_metrics(entries)
 
 def show_tree(json_file, which=None):
     """
@@ -87,9 +97,6 @@ def show_tree(json_file, which=None):
             )
             highlight_segments.append(seg)
 
-    # Optionally deduplicate highlighted segments (not strictly necessary)
-    # highlight_segments = list(dict.fromkeys(highlight_segments))
-
     # 3) Combine and color
     all_segments = tree_segments + highlight_segments
     lc.set_segments(all_segments)
@@ -106,10 +113,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("file", help="porrt_export_*.json")
     ap.add_argument("--tree", action="store_true", help="show whole tree")
+    ap.add_argument("--pareto", action="store_true", help="show only the Pareto front scatter plot")
     ap.add_argument("--which", choices=["filtered", "multiple"], default="filtered")
     args = ap.parse_args()
 
-    if args.tree:
+    if args.pareto:
+        show_pareto(args.file, which=args.which)
+    elif args.tree:
         show_tree(args.file, which=args.which)
     else:
         show_paths(args.file, which=args.which)
