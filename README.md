@@ -4,7 +4,7 @@
 ![NumPy](https://img.shields.io/badge/NumPy-Vectorized-deepgreen.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
-**PO-RRT*** is a high-performance, multi-objective motion planning algorithm. Traditional RRT* algorithms force competing objectives (e.g., minimizing travel distance vs. navigating risk zones) into a single scalar weight, often missing the true optimal path. This framework abandons scalar weights entirely. Instead, it computes and preserves the **complete set of non-dominated trade-off trajectories (the Pareto frontier)** in real-time, allowing an autonomous agent (or human operator) to dynamically select the best path post-computation.
+**PO-RRT*** is an optimal, multi-objective motion planning algorithm. Traditional RRT* algorithms force competing objectives (e.g., minimizing travel distance vs. navigating risk zones) into a single scalar weight, hiding the true values of each individual objective. This framework abandons scalar weights entirely. Instead, it computes and preserves the **complete set of non-dominated trade-off trajectories (the Pareto frontier)** in real-time, allowing an autonomous agent (or human operator) to dynamically select the best path post-computation.
 
 ### Baseline RRT* (Weighted) vs. PO-RRT*
 | Standard RRT* (Scalar Focus) | PO-RRT* (Multi-Objective) |
