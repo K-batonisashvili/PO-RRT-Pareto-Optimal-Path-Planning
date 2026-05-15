@@ -1,0 +1,85 @@
+EXPERIMENT SUMMARY REPORT
+========================================================================
+Total samples per run (max_iter): 4000
+step_size = 5
+
+[PO-RRT*]
+  # Pareto-optimal goal paths: 3
+  cost range:   [118.724, 123.921]
+  p_fail range: [0.000000, 1.000000]
+  best distance path:
+    cost=118.724, p_fail=1.000000
+  safest path:
+    cost=123.921, p_fail=0.000000
+
+[Naive scalar RRT* baselines]
+
+  Baseline: distance_only
+    mode      : distance
+    alpha     : 0.0
+    status    : OK
+    num_nodes : 3525
+    cost      : 103.969
+    p_fail    : 1.000000
+    scalar    : 103.968598
+    vs PO-RRT*: non_dominated
+
+  Baseline: risk_only
+    mode      : risk
+    alpha     : 0.0
+    status    : OK
+    num_nodes : 3525
+    cost      : 143.853
+    p_fail    : 0.000000
+    scalar    : 0.000000
+    vs PO-RRT*: dominated
+
+  Baseline: weighted_0
+    mode      : weighted
+    alpha     : 4.0
+    status    : OK
+    num_nodes : 3525
+    cost      : 104.269
+    p_fail    : 1.000000
+    scalar    : 108.269454
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_5
+    mode      : weighted
+    alpha     : 8.0
+    status    : OK
+    num_nodes : 3525
+    cost      : 108.199
+    p_fail    : 0.667557
+    scalar    : 113.539481
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_10
+    mode      : weighted
+    alpha     : 12.0
+    status    : OK
+    num_nodes : 3525
+    cost      : 114.981
+    p_fail    : 0.000000
+    scalar    : 114.981320
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_25
+    mode      : weighted
+    alpha     : 16.0
+    status    : OK
+    num_nodes : 3525
+    cost      : 114.981
+    p_fail    : 0.000000
+    scalar    : 114.981320
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_50
+    mode      : weighted
+    alpha     : 20.0
+    status    : OK
+    num_nodes : 3525
+    cost      : 114.981
+    p_fail    : 0.000000
+    scalar    : 114.981320
+    vs PO-RRT*: non_dominated

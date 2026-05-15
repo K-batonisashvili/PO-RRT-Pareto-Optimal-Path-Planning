@@ -1,4 +1,5 @@
 import time
+from tracemalloc import start
 import numpy as np
 import logging
 import tkinter as tk
@@ -32,7 +33,6 @@ def _pack_paths_for_json(paths):
                 {
                     "x": float(n.x),
                     "y": float(n.y),
-                    "theta": float(getattr(n, "theta", 0.0)),
                     "cost": float(getattr(n, "cost", 0.0)),
                     "p_fail": float(getattr(n, "p_fail", 0.0)),
                 } for n in nodes
@@ -58,7 +58,6 @@ def save_tree_debug_json(filename, tree):
             "id": idx,
             "x": float(n.x),
             "y": float(n.y),
-            "theta": float(getattr(n, "theta", 0.0)),
             "cost": float(getattr(n, "cost", 0.0)),
             "p_fail": float(getattr(n, "p_fail", 0.0)),
             "log_survival": float(getattr(n, "log_survival", 0.0)),
@@ -426,6 +425,13 @@ def spectral_cluster_paths(
 
 
 
+
+
+
+
+
+
+
 # ----------------------- #
 #       Main Classes      #
 # ----------------------- #t
@@ -444,6 +450,8 @@ class Tree:
         self.rewire_counts = 0
         self.additional_rewire_nodes = 0  # Additional rewire nodes        
         self.rewire_neighbors_count = 0
+        self.rewire_parent_changes = 0      # how many times a node got a new parent
+        self.alternative_branch_creations = 0  # how many alt nodes were spawned
         self.grid = grid
         self.node_count = 0 # Debugger
         self.path_count = 0 # Debugger
@@ -506,7 +514,7 @@ class Tree:
         self.node_count -= 1
 
         # Log the removal for debugging
-        logging.info(f"Removed orphaned node: x={node.x}, y={node.y}, theta={node.theta}")
+        logging.info(f"Removed orphaned node: x={node.x}, y={node.y}")
 
     def build_kdtree(self):
         """
@@ -516,37 +524,28 @@ class Tree:
 
     def connection_radius(self):
         """
-        Dynamic RRT* neighbor radius:
+        Standard RRT* neighbor radius:
             r_n = min{ gamma * (log n / n)^(1/d), eta }
 
-        - We use d = 2 (x, y only, matching the kd-tree).
-        - Approximate free space volume by grid.width * grid.height.
-        - eta is chosen as a multiple of DEFAULT_STEP_SIZE.
+        d=2 because the KDTree is built in (x,y).
+        free_volume is approximated by width*height.
+        eta is the steering limit (DEFAULT_STEP_SIZE).
         """
-        # Number of nodes in the tree (avoid log(1) / log(0))
         n = max(len(self.node_list), 2)
-        d = 2  # 2D (x,y) space for the kd-tree
+        d = 2
 
-        # Volume of unit ball in R^2
-        zeta_d = math.pi
-
-        # Approximate free volume by the grid dimensions
+        zeta_d = math.pi  # volume of unit ball in R^2
         free_volume = float(self.grid.width * self.grid.height)
 
-        # Gamma_RRT* per Karaman & Frazzoli (up to a constant factor)
-        gamma_rrt = 2.0 * ((1.0 + 1.0 / d) ** (1.0 / d)) * (
-            (free_volume / zeta_d) ** (1.0 / d)
-        )
-
-        # Base theoretical radius
+        gamma_rrt = 2.0 * ((1.0 + 1.0 / d) ** (1.0 / d)) * ((free_volume / zeta_d) ** (1.0 / d))
         base_radius = gamma_rrt * ((math.log(n) / n) ** (1.0 / d))
 
-        # Cap radius by a multiple of the step size (eta)
-        eta = DEFAULT_STEP_SIZE * 2.0  # tune this multiplier as desired
+        eta = float(DEFAULT_STEP_SIZE)
         r = min(base_radius, eta)
 
-        # Safety: avoid zero / extremely tiny radius
-        return max(r, 0.5 * DEFAULT_STEP_SIZE)
+        # tiny safety (optional)
+        return 10
+
 
 
     def finalize_path(self, goal_node):
@@ -603,7 +602,7 @@ class Tree:
     #         if n is node:
     #             continue
 
-    #         node_signature = (n.x, n.y, n.theta, round(n.cost, 3), round(n.p_fail, 5))
+    #         node_signature = (n.x, n.y, round(n.cost, 3), round(n.p_fail, 5))
     #         if node_signature not in seen:
     #             neighbors.append(n)
     #             seen.add(node_signature)
@@ -636,7 +635,7 @@ class Tree:
             if n is node:
                 continue
 
-            node_signature = (n.x, n.y, n.theta,
+            node_signature = (n.x, n.y,
                               round(n.cost, 3),
                               round(n.p_fail, 5))
             if node_signature not in seen:
@@ -696,23 +695,23 @@ class Tree:
         return (cost1 <= cost2 and fail1 < fail2) or \
         (cost1 < cost2 and fail1  <= fail2)
     
-    def choose_parents(self, znear, x, y, theta, grid):
+    def choose_parents(self, znear, x, y, grid):
         """
         Instead of picking a single best parent, return a list of new Node()s—
         one for *each* neighbor in Znear that yields a Pareto‐optimal (cost, p_fail)
-        pair at the same (x,y,theta).
+        pair at the same (x,y).
         """
-        test_node = Node(x, y, theta)
+        test_node = Node(x, y)
         znear = [z for z in znear if distance_to(z, test_node) <= DEFAULT_STEP_SIZE]
         
         # 1) gather all candidate (parent, cost, log_survival, p_fail)
         new_node_candidates = []
         
         for potential_parent in znear:
-            if not is_edge_collision_free(potential_parent, test_node, grid, num_samples=10, p_threshold=0.9):
+            if not is_edge_collision_free(potential_parent, test_node, grid, num_samples=50, p_threshold=0.9):
                 continue
             log_s_step = accumulate_log_survival(potential_parent, test_node, grid)
-            cost   = potential_parent.cost + distance_to(potential_parent, Node(x,y,theta))
+            cost   = potential_parent.cost + distance_to(potential_parent, Node(x,y))
             log_survival = potential_parent.log_survival + log_s_step
             prob_failure  = 1 - np.exp(log_survival)
             new_node_candidates.append((potential_parent, cost, log_survival, prob_failure))
@@ -732,11 +731,11 @@ class Tree:
         final_pareto_nodes = []
         for potential_parent, cost, log_surv, p_fail in pareto_dominant_nodes:
             # Check if the potential parent is too far from the new node
-            if distance_to(potential_parent, Node(x, y, theta)) > DEFAULT_STEP_SIZE + 1e-3:
+            if distance_to(potential_parent, Node(x, y)) > DEFAULT_STEP_SIZE + 1e-3:
                 print(f" [choose_parents] Illegal parent assignment: jump from "
                                 f"({potential_parent.x:.2f}, {potential_parent.y:.2f}) → ({x:.2f}, {y:.2f})")
 
-            new_node = Node(x, y, theta)
+            new_node = Node(x, y)
             new_node.parent         = potential_parent
             potential_parent.children.append(new_node)
             new_node.cost           = cost
@@ -790,14 +789,17 @@ class Tree:
 
         # 3) For each non-dominated candidate, perform the rewire
         for z, new_cost, new_log_survival, new_p_fail in pareto_rewires:
-            # Check if this is a strictly dominant rewire
-            
+                        
             if self.is_descendant(z, nn):
                 continue  # Prevent cycles
             
-            strictly_dominant = self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail)
+            # 1) If the existing node z is strictly better, discard the candidate.
+            if self.pareto_dominates(z.cost, z.p_fail, new_cost, new_p_fail):
+                # candidate is strictly worse than what we already have at z
+                continue
 
-            if strictly_dominant:
+            # 2) If the candidate is strictly better, perform the rewire.
+            if self.pareto_dominates(new_cost, new_p_fail, z.cost, z.p_fail):
                 # Detach neighbor from old parent and old path
                 old_parent = z.parent
                 if old_parent:
@@ -820,9 +822,10 @@ class Tree:
                 # Propagate down the subtree
                 self.propagate_cost(z, grid)
                 self.rewire_counts += 1
+                self.rewire_parent_changes += 1   
             else:
                 # Non-dominated but not strictly dominant = new node/branch
-                new_z = Node(z.x, z.y, z.theta)
+                new_z = Node(z.x, z.y)
                 new_z.parent = nn
                 nn.children.append(new_z)
                 new_z.cost = new_cost
@@ -833,6 +836,7 @@ class Tree:
                 new_z.is_additional_rewire = True  # rewire tracking
                 self.propagate_cost(new_z, grid)
                 self.rewire_counts += 1
+                self.alternative_branch_creations += 1  
 
     def propagate_cost(self, root, grid):
         """
@@ -919,10 +923,9 @@ class Node:
     """
     Class representing a node in the RRT tree.
     """
-    def __init__(self, x, y, theta):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.theta = theta
         self.parent = None
         self.children = []
         self.cost = 0.0
@@ -982,9 +985,9 @@ class Grid:
                 if 0 <= x < self.width and 0 <= y < self.height:
                     dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
                     if dist <= rad_cells:
-                        new_prob = 0.9
+                        new_prob = 0.99
                     elif dist <= rad_cells + safe_cells:
-                        new_prob = 0.9 * (1 - (dist - rad_cells) / safe_cells)
+                        new_prob = 0.99 * (1 - (dist - rad_cells) / safe_cells)
                     else:
                         new_prob = 0.0
 
@@ -1017,7 +1020,7 @@ class Grid:
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-def PO_RRT_Star(start, goal, grid, max_iter):
+def PO_RRT_Star(start, goal, grid, max_iter, sample_sequence=None, rng_seed=None):
     # Initialize the tree and nodes
     start_node, goal_node = Node(*start), Node(*goal)
     tree = Tree(grid)
@@ -1027,6 +1030,12 @@ def PO_RRT_Star(start, goal, grid, max_iter):
     start_node.is_start = True
     multiple_paths = []
     goal_tracker = set()
+
+
+    if sample_sequence is None:
+        rng = np.random.default_rng(rng_seed)
+    else:
+        rng = None
 
     
     # 3D figure
@@ -1051,12 +1060,25 @@ def PO_RRT_Star(start, goal, grid, max_iter):
     
     for current_iter in range(max_iter):
         # Random node sample
-        rand_node = Node(np.random.uniform(0, grid.width), np.random.uniform(0, grid.height), np.random.uniform(-np.pi, np.pi))
+        # rand_node = Node(np.random.uniform(0, grid.width), np.random.uniform(0, grid.height))
+
+                # 1) sample random configuration (optionally from a provided deterministic sequence)
+        if sample_sequence is not None:
+            if current_iter >= len(sample_sequence):
+                break  # no more samples available
+            sx, sy = sample_sequence[current_iter]
+            rand_node = Node(float(sx), float(sy))
+        else:
+            rand_node = Node(
+                float(rng.uniform(0, grid.width)),
+                float(rng.uniform(0, grid.height)),
+            )
+
         if is_collision_free(rand_node, grid):  
             # Find the nearest node in the tree and steer to new node from it
             nearest_node = tree.nearest(rand_node)
-            x, y, theta = steer(nearest_node, rand_node, DEFAULT_STEP_SIZE)
-            new_node = Node(x, y, theta)
+            x, y = steer(nearest_node, rand_node, DEFAULT_STEP_SIZE)
+            new_node = Node(x, y)
             if is_collision_free(new_node, grid): # Check if the new node is collision-free              
                 znear = tree.neighbors(new_node)
 
@@ -1067,7 +1089,6 @@ def PO_RRT_Star(start, goal, grid, max_iter):
                         znear, 
                         new_node.x, 
                         new_node.y, 
-                        new_node.theta, 
                         grid
                     )   
                     
@@ -1078,7 +1099,7 @@ def PO_RRT_Star(start, goal, grid, max_iter):
                         # 1) goal check per branch
                         if distance_to(nn, goal) <= DEFAULT_STEP_SIZE:
                             # connect to goal exactly once per branch
-                                goal_instance = Node(goal[0], goal[1], goal[2])
+                                goal_instance = Node(goal[0], goal[1])
                                 goal_instance.is_goal = True
                                 goal_instance.parent = nn
                                 nn.children.append(goal_instance)
@@ -1092,14 +1113,16 @@ def PO_RRT_Star(start, goal, grid, max_iter):
                                 goal_instance.log_survival = nn.log_survival + log_s_step
                                 goal_instance.p_fail = 1 - np.exp(goal_instance.log_survival)
                                 
-                                # Deduplication: check if this goal node is worse than one already added
-                                key = (round(goal_instance.p_fail, 5), round(goal_instance.cost, 2))
-                                if key in goal_tracker:
-                                    continue  # Skip adding this goal node — dominated or duplicate
-                                goal_tracker.add(key)
+                                # # Deduplication: check if this goal node is worse than one already added
+                                # key = (round(goal_instance.p_fail, 7), round(goal_instance.cost, 7))
+                                # if key in goal_tracker:
+                                #     continue  # Skip adding this goal node — dominated or duplicate
+                                # goal_tracker.add(key)
 
                                 # Add goal_instance to tree
                                 tree.add_node(goal_instance) 
+                                # redraw_tree_2d(tree, lc2d, edge_segments2d, highlighted_paths=None)
+                                # redraw_tree(tree, lc3d, edge_segments3d, highlighted_paths=None)
                                 print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}")
                         else:
                             tree.add_node(nn, multiple_children=multiple_children)
@@ -1110,7 +1133,7 @@ def PO_RRT_Star(start, goal, grid, max_iter):
                         multiple_children = True if len(nn.parent.children) > 1 else False
                         if distance_to(nn, goal) <= DEFAULT_STEP_SIZE:
                                 # ─── goal handling ─────────────────────────
-                                goal_instance = Node(goal[0], goal[1], goal[2])
+                                goal_instance = Node(goal[0], goal[1])
                                 goal_instance.is_goal = True
                                 goal_instance.parent = nn
                                 nn.children.append(goal_instance)
@@ -1124,14 +1147,17 @@ def PO_RRT_Star(start, goal, grid, max_iter):
                                 goal_instance.log_survival = nn.log_survival + log_s_step
                                 goal_instance.p_fail = 1 - np.exp(goal_instance.log_survival)
 
-                                # Deduplication: check if this goal node is worse than one already added
-                                key = (round(goal_instance.p_fail, 5), round(goal_instance.cost, 2))
-                                if key in goal_tracker:
-                                    continue  # Skip adding this goal node — dominated or duplicate
-                                goal_tracker.add(key)
+                                # # Deduplication: check if this goal node is worse than one already added
+                                # key = (round(goal_instance.p_fail, 5), round(goal_instance.cost, 2))
+                                # if key in goal_tracker:
+                                #     continue  # Skip adding this goal node — dominated or duplicate
+                                # goal_tracker.add(key)
 
                                 # Add goal_instance to tree
                                 tree.add_node(goal_instance) 
+                                
+                                # redraw_tree_2d(tree, lc2d, edge_segments2d, highlighted_paths=None)
+                                # redraw_tree(tree, lc3d, edge_segments3d, highlighted_paths=None)
                                 print(f"Goal node added to tree with cost: {goal_instance.cost}, p_fail: {goal_instance.p_fail}")
                         # 2) Not near goal, so add the new node to the tree
                         else:
@@ -1140,8 +1166,7 @@ def PO_RRT_Star(start, goal, grid, max_iter):
                             tree.add_node(nn, multiple_children=multiple_children)
                             tree.rewire(tree.neighbors(nn), nn, grid)
 
-                    
-                        # redraw_tree_2d(tree, lc2d, edge_segments2d, highlighted_paths=None)
+        
 
     # 1. Collect all goal nodes in the tree
     goal_nodes = []
@@ -1154,6 +1179,36 @@ def PO_RRT_Star(start, goal, grid, max_iter):
     seen_path_signatures = set()
     for g in goal_nodes:
         tree.finalize_path(g)  # will build and append new Path() object from g.parent chain
+
+    # --- 2. NEW: Post-Run exhaustive check (Matches Standard RRT*) ---
+    # Because PO-RRT* only checks connection during node creation, it might have missed
+    # rewired nodes that are now close to the goal.
+    goal_template = Node(*goal)
+    post_run_goals = 0
+    for node in tree.node_list:
+        # If node is NOT already a goal, but close enough
+        if not node.is_goal and distance_to(node, goal_template) <= DEFAULT_STEP_SIZE:
+             # Check if we already have a goal child attached
+            has_goal_child = any(child.is_goal for child in node.children)
+            if not has_goal_child:
+                if is_edge_collision_free(node, goal_template, grid):
+                    # Attach new goal node
+                    g = Node(goal[0], goal[1])
+                    g.is_goal = True
+                    g.parent = node
+                    node.children.append(g)
+                    
+                    g.cost = node.cost + distance_to(node, g)
+                    log_s = accumulate_log_survival(node, g, grid)
+                    g.log_survival = node.log_survival + log_s
+                    g.p_fail = 1 - np.exp(g.log_survival)
+                    
+                    tree.add_node(g)
+                    tree.finalize_path(g)
+                    post_run_goals += 1
+    
+    if post_run_goals > 0:
+        print(f"PO-RRT* Post-Run: Connected {post_run_goals} additional nodes to goal.")
 
     # 3. Filter down to only complete, non-dominated paths
     # Extract multiple paths from the tree
@@ -1195,7 +1250,7 @@ def PO_RRT_Star(start, goal, grid, max_iter):
                 print(f"    ERROR: Negative p_fail detected at node {i} or {i+1}.")
 
             # Normal print
-            print(f"  (x={b.x:.2f}, y={b.y:.2f}, theta={b.theta:.2f}, cost={b.cost:.2f}, p_fail={b.p_fail:.4f})" +
+            print(f"  (x={b.x:.2f}, y={b.y:.2f}, cost={b.cost:.2f}, p_fail={b.p_fail:.4f})" +
                 (" [GOAL]" if getattr(b, "is_goal", False) else ""))
             
     num_additional_in_tree = sum(1 for n in tree.node_list if getattr(n, "is_additional_rewire", False))
@@ -1222,7 +1277,7 @@ def PO_RRT_Star(start, goal, grid, max_iter):
     # Print each unique path's cost and p_fail
     print("\nPre-Filtered unique paths (cost, p_fail):")
     for entry in filtered_paths:
-        print(f"  cost={entry['cost']:.6f}, p_fail={entry['p_fail']:.8f}")
+        print(f"  euclidean distance={entry['cost']:.6f}, p_fail={entry['p_fail']:.8f}")
 
     # Remove duplicates by (cost, p_fail), keeping the first occurrence
     unique_filtered = []
@@ -1244,7 +1299,7 @@ def PO_RRT_Star(start, goal, grid, max_iter):
     # list of Path objects you want to highlight
     highlight_paths = [entry["path"] for entry in filtered_paths]
 
-    # draw 3D tree + green complete paths
+    # # draw 3D tree + green complete paths
     redraw_tree(tree, lc3d, edge_segments3d, highlighted_paths=highlight_paths)
 
     # draw 2D tree + green complete paths
@@ -1253,101 +1308,11 @@ def PO_RRT_Star(start, goal, grid, max_iter):
     # debug_filename = input("Tree debug filename [porrt_tree_debug.json]: ").strip() or "porrt_tree_debug.json"
     # save_tree_debug_json(debug_filename, tree)
 
-    return filtered_paths, multiple_paths, tree
+    return filtered_paths, multiple_paths, tree, edge_segments2d
 
 ##################################
 ## CENTRAL PO_RRT_STAR FUNCTION ##
 ##################################
-
-
-# ----------------------- #
-#   Post-processing: clustering
-# ----------------------- #
-def cluster_paths(path_entries, cost_tol=1.0, p_fail_tol=0.05):
-    """
-    Cluster similar paths using only cost and p_fail tolerances.
-
-    Inputs:
-      - path_entries: list of dicts {"path": Path, "cost": float, "p_fail": float}
-      - cost_tol: maximum absolute cost difference
-      - p_fail_tol: maximum absolute p_fail difference
-
-    Returns: list of clusters, each cluster is a dict:
-      {"members": [entry,...], "representative": entry}
-
-    Representative is chosen as the member with lowest cost (tie-breaker: lower p_fail).
-    """
-    remaining = list(path_entries)
-    clusters = []
-
-    def similar(a, b):
-        cost_sim = abs(a['cost'] - b['cost']) <= cost_tol
-        p_sim = abs(a['p_fail'] - b['p_fail']) <= p_fail_tol
-        return cost_sim and p_sim
-
-    while remaining:
-        seed = remaining.pop(0)
-        cluster = [seed]
-        to_remove = []
-        for other in remaining:
-            if similar(seed, other):
-                cluster.append(other)
-                to_remove.append(other)
-        # purge removed
-        for r in to_remove:
-            remaining.remove(r)
-
-        # choose representative
-        rep = min(cluster, key=lambda e: (e['cost'], e['p_fail']))
-        clusters.append({'members': cluster, 'representative': rep})
-
-    return clusters
-
-
-def summarize_clusters(clusters):
-    """Print a short summary for clusters."""
-    print(f"Found {len(clusters)} clusters")
-    for i, cl in enumerate(clusters, start=1):
-        members = cl['members']
-        rep = cl['representative']
-        print(f"Cluster {i}: {len(members)} members | repr cost={rep['cost']:.4f}, p_fail={rep['p_fail']:.6f}")
-
-
-def interactive_postprocess(filtered_paths, multiple_paths, obstacles=None):
-    """
-    Simple CLI interactive post-processing for clustering. Returns clusters.
-    """
-    if not filtered_paths:
-        print("No filtered paths to post-process.")
-        return []
-
-    print("\nPost-process (cluster similar paths by cost & p_fail)")
-    try:
-        cost_tol = float(input("cost tolerance [1.0]: ").strip() or 1.0)
-    except ValueError:
-        cost_tol = 1.0
-    try:
-        p_fail_tol = float(input("p_fail tolerance [0.05]: ").strip() or 0.05)
-    except ValueError:
-        p_fail_tol = 0.05
-
-    clusters = cluster_paths(filtered_paths, cost_tol=cost_tol, p_fail_tol=p_fail_tol)
-    summarize_clusters(clusters)
-
-    # Optionally plot cluster representatives
-    do_plot = input("Plot cluster representatives? (y/N): ").strip().lower() == 'y'
-    if do_plot and clusters:
-        reps = [c['representative'] for c in clusters]
-        try:
-            plot_paths_summary(reps, obstacles=obstacles)
-        except Exception as e:
-            print(f"Plotting failed: {e}")
-
-    return clusters
-
-# ----------------------- #
-#   Post-processing: clustering
-# ----------------------- #
 
 
 
@@ -1360,17 +1325,38 @@ def main():
     obstacles = []
 
     
-    start, goal = (3, 95, 0), (80, 50, 0)
+    start, goal = (3, 95), (80, 50)
+    # start, goal = (50, 99), (50, 1)
 
     # Obstacle dictionary
+    # obstacles = [
+    #     {"type": "circular", "center": (10, 53), "radius": 7, "safe_dist": 5},
+    #     {"type": "rectangular", "x_range": (18, 42), "y_range": (10, 40), "probability": 0.05},
+    #     {"type": "rectangular", "x_range": (45, 65), "y_range": (45, 60), "probability": 0.05},
+    #     {"type": "rectangular", "x_range": (20, 40), "y_range": (50, 60), "probability": 0.07},
+    #     {"type": "circular", "center": (30, 58), "radius": 7, "safe_dist": 5},
+    #     # {"type": "circular", "center": (0, 50), "radius": 10, "safe_dist": 4},
+    #     # {"type": "circular", "center": (100, 50), "radius": 10, "safe_dist": 4}
+    # ]
+
     obstacles = [
-        # {"type": "circular", "center": (50, 80), "radius": 10, "safe_dist": 5},
-        # {"type": "rectangular", "x_range": (20, 80), "y_range": (20, 80), "probability": 0.05},
-        # {"type": "rectangular", "x_range": (30, 90), "y_range": (20, 30), "probability": 0.05},
-        # {"type": "rectangular", "x_range": (10, 60), "y_range": (40, 50), "probability": 0.07},
-        {"type": "circular", "center": (50, 50), "radius": 25, "safe_dist": 7},
-        {"type": "circular", "center": (0, 50), "radius": 10, "safe_dist": 4},
-        {"type": "circular", "center": (100, 50), "radius": 10, "safe_dist": 4}
+    {"type": "rectangular", "x_range": (10, 20), "y_range": (60, 80), "probability": 1.0},
+
+    {"type": "rectangular", "x_range": (40, 50), "y_range": (30, 70), "probability": 1.0},
+
+    {"type": "rectangular", "x_range": (50, 60), "y_range": (0, 20), "probability": 1.0},
+
+    {"type": "rectangular", "x_range": (40, 70), "y_range": (30, 35), "probability": 1.0},
+
+    {"type": "rectangular", "x_range": (70, 75), "y_range": (20, 35), "probability": 1.0},
+
+    {"type": "rectangular", "x_range": (60, 70), "y_range": (60, 80), "probability": 1.0},
+
+    {"type": "rectangular", "x_range": (70, 80), "y_range": (80, 95), "probability": 1.0},
+
+    {"type": "rectangular", "x_range": (60, 80), "y_range": (75, 80), "probability": 1.0},
+    
+    {"type": "circular", "center": (20, 40), "radius": 5, "safe_dist": 2},
     ]
 
 
@@ -1383,7 +1369,7 @@ def main():
     )
     grid = Grid(GRID_WIDTH, GRID_HEIGHT, obstacles)
 
-    filtered_paths, multiple_paths, tree = PO_RRT_Star(start, goal, grid, sample_count)
+    filtered_paths, multiple_paths, tree, edge_segments = PO_RRT_Star(start, goal, grid, sample_count)
     
     # Default plotting (ask user)
 

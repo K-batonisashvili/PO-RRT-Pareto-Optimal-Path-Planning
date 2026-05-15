@@ -1,0 +1,86 @@
+========================================================================
+EXPERIMENT SUMMARY REPORT
+========================================================================
+Total samples per run (max_iter): 5000
+step_size 15
+
+[PO-RRT*]
+  # Pareto-optimal goal paths: 27
+  cost range:   [105.471, 116.630]
+  p_fail range: [0.000000, 1.000000]
+  best distance path:
+    cost=105.471, p_fail=1.000000
+  safest path:
+    cost=116.630, p_fail=0.000000
+
+[Naive scalar RRT* baselines]
+
+  Baseline: distance_only
+    mode      : distance
+    alpha     : 0.0
+    status    : OK
+    num_nodes : 3592
+    cost      : 102.735
+    p_fail    : 1.000000
+    scalar    : 102.734747
+    vs PO-RRT*: non_dominated
+
+  Baseline: risk_only
+    mode      : risk
+    alpha     : 0.0
+    status    : OK
+    num_nodes : 3592
+    cost      : 145.187
+    p_fail    : 0.000000
+    scalar    : 0.000000
+    vs PO-RRT*: dominated
+
+  Baseline: weighted_0
+    mode      : weighted
+    alpha     : 4.0
+    status    : OK
+    num_nodes : 3592
+    cost      : 103.056
+    p_fail    : 1.000000
+    scalar    : 107.056280
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_5
+    mode      : weighted
+    alpha     : 8.0
+    status    : OK
+    num_nodes : 3592
+    cost      : 106.069
+    p_fail    : 0.654241
+    scalar    : 111.302716
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_10
+    mode      : weighted
+    alpha     : 12.0
+    status    : OK
+    num_nodes : 3592
+    cost      : 113.332
+    p_fail    : 0.000000
+    scalar    : 113.331989
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_25
+    mode      : weighted
+    alpha     : 16.0
+    status    : OK
+    num_nodes : 3592
+    cost      : 113.332
+    p_fail    : 0.000000
+    scalar    : 113.331989
+    vs PO-RRT*: non_dominated
+
+  Baseline: weighted_50
+    mode      : weighted
+    alpha     : 20.0
+    status    : OK
+    num_nodes : 3592
+    cost      : 113.332
+    p_fail    : 0.000000
+    scalar    : 113.331989
+    vs PO-RRT*: non_dominated

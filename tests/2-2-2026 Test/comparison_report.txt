@@ -1,0 +1,90 @@
+
+========================================================================
+EXPERIMENT SUMMARY REPORT
+========================================================================
+Total samples per run (max_iter): 3250
+
+[PO-RRT*]
+  # Pareto-optimal goal paths: 33
+  cost range:   [107.854, 115.638]
+  p_fail range: [0.000000, 0.999718]
+  best distance path:
+    cost=107.854, p_fail=0.999718
+  safest path:
+    cost=115.638, p_fail=0.000000
+
+[Naive scalar RRT* baselines]
+
+  Baseline: distance_only
+    mode      : distance
+    w1        : 1.0
+    w2        : 0.0
+    num_nodes : 2626
+    cost      : 103.114
+    p_fail    : 1.000000
+    scalar    : 103.113897
+
+  Baseline: risk_only
+    mode      : risk
+    w1        : 0.0
+    w2        : 1.0
+    num_nodes : 2626
+    cost      : 168.960
+    p_fail    : 0.000000
+    scalar    : 0.000000
+
+  Baseline: weighted_1
+    mode      : weighted
+    w1        : 0.5
+    w2        : 0.5
+    num_nodes : 2626
+    cost      : 103.114
+    p_fail    : 1.000000
+    scalar    : 52.056991
+
+  Baseline: weighted_2
+    mode      : weighted
+    w1        : 0.4
+    w2        : 0.6
+    num_nodes : 2626
+    cost      : 103.114
+    p_fail    : 1.000000
+    scalar    : 41.845593
+
+  Baseline: weighted_3
+    mode      : weighted
+    w1        : 0.3
+    w2        : 0.7
+    num_nodes : 2626
+    cost      : 103.114
+    p_fail    : 1.000000
+    scalar    : 31.634194
+
+  Baseline: weighted_4
+    mode      : weighted
+    w1        : 0.2
+    w2        : 0.8
+    num_nodes : 2626
+    cost      : 103.309
+    p_fail    : 1.000000
+    scalar    : 21.461872
+
+  Baseline: weighted_5
+    mode      : weighted
+    w1        : 0.1
+    w2        : 0.9
+    num_nodes : 2626
+    cost      : 106.670
+    p_fail    : 0.632404
+    scalar    : 11.236197
+
+  Baseline: weighted_6
+    mode      : weighted
+    w1        : 0.05
+    w2        : 0.95
+    num_nodes : 2626
+    cost      : 113.089
+    p_fail    : 0.000000
+    scalar    : 5.654432
+
+========================================================================
